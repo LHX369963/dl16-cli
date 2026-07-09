@@ -11,6 +11,7 @@ from atkdl16_cli.protocol import (
     build_transport_frame,
     crc32_atk,
     crc32_bytes,
+    parse_hex_payload,
 )
 
 
@@ -63,3 +64,15 @@ def test_transport_frame_wraps_inner_frame_with_padding_markers_and_crc():
 def test_inner_frame_rejects_payloads_too_large_for_one_byte_length():
     with pytest.raises(ProtocolError, match="payload too long"):
         build_inner_frame(Command.PWM, bytes(255))
+
+
+def test_parse_hex_payload_accepts_spaces_and_empty_string():
+    assert parse_hex_payload("11 22 aa") == b"\x11\x22\xaa"
+    assert parse_hex_payload("1122AA") == b"\x11\x22\xaa"
+    assert parse_hex_payload("") == b""
+
+
+@pytest.mark.parametrize("text", ["1", "zz", "11:22"])
+def test_parse_hex_payload_rejects_malformed_hex(text):
+    with pytest.raises(ProtocolError):
+        parse_hex_payload(text)

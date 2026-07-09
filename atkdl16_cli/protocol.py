@@ -86,3 +86,15 @@ def build_transport_frame(
     # copies the inner frame at offset 9, writes 0x0b immediately after the
     # inner frame, writes CRC32 at inner_len + 10, and leaves the final byte 0.
     return (b"\x00" * 8) + b"\x0a" + inner + b"\x0b" + crc + b"\x00"
+
+
+def parse_hex_payload(text: str) -> bytes:
+    compact = "".join(text.split())
+    if compact == "":
+        return b""
+    if len(compact) % 2:
+        raise ProtocolError(f"hex payload must contain an even number of digits, got {text!r}")
+    try:
+        return bytes.fromhex(compact)
+    except ValueError as exc:
+        raise ProtocolError(f"hex payload contains non-hex characters: {text!r}") from exc
