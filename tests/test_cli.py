@@ -40,3 +40,54 @@ def test_cli_stop_dry_run_prints_frame(capsys):
     assert rc == 0
     assert "STOP" in out
     assert "150202" in out
+
+class CliFakeBackend:
+    instances = []
+
+    def __init__(self):
+        self.sent_frames = []
+        self.devices = []
+        CliFakeBackend.instances.append(self)
+
+    def list_devices(self):
+        return self.devices
+
+    def send_frame(self, frame: bytes):
+        self.sent_frames.append(frame)
+        return b"\x99"
+
+
+def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
+    import atkdl16_cli.cli as cli
+
+    CliFakeBackend.instances.clear()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    rc = cli.main(["--vid-pid", "1a86:ffcc", "--timeout-ms", "250", "info"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "GET_DEVICE_DATA response: 99" in out
+    assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_cli_non_dry_run_stop_uses_backend_factory(monkeypatch, capsys):
+    import atkdl16_cli.cli as cli
+
+    CliFakeBackend.instances.clear()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    rc = cli.main(["stop", "--channel", "2"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "STOP response: 99" in out
+    assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_cli_non_dry_run_pwm_start_uses_backend_factory(monkeypatch, capsys):
+    import atkdl16_cli.cli as cli
+
+    CliFakeBackend.instances.clear()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    rc = cli.main(["pwm", "start", "--channel", "0", "--freq", "1000", "--duty", "50"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "PWM_START response: 99" in out
+    assert len(CliFakeBackend.instances[0].sent_frames) == 1

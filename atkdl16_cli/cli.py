@@ -7,16 +7,22 @@ from collections.abc import Sequence
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .protocol import SUPPORTED_USB_IDS
-from .usb import DeviceInfo, DryRunBackend
+from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
 
 def _print_frame(label: str, frame: bytes) -> None:
     print(f"{label} frame: {frame.hex()}")
 
 
+def _print_response(label: str, response: bytes) -> None:
+    print(f"{label} response: {response.hex()}")
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="atkdl16")
     parser.add_argument("--dry-run", action="store_true", help="print frames without accessing USB hardware")
+    parser.add_argument("--vid-pid", default=None, help="select USB device as VID:PID hex, for example 1a86:ffcc")
+    parser.add_argument("--timeout-ms", type=int, default=1000, help="USB timeout in milliseconds")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("list", help="list supported or attached devices")
@@ -42,14 +48,17 @@ def _dry_backend() -> DryRunBackend:
     return DryRunBackend(devices=devices)
 
 
+def create_backend(dry_run: bool, vid_pid: tuple[int, int] | None, timeout_ms: int) -> UsbBackend:
+    if dry_run:
+        return _dry_backend()
+    return PyUsbBackend(vid_pid=vid_pid, timeout_ms=timeout_ms)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-
-    if not args.dry_run:
-        parser.error("only --dry-run is available in this implementation plan")
-
-    backend = _dry_backend()
+    vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
+    backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
     device = AtkDevice(backend)
 
     try:
@@ -59,19 +68,34 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
 
         if args.command == "info":
-            _print_frame("GET_DEVICE_DATA", device.get_device_data_frame())
+            if args.dry_run:
+                _print_frame("GET_DEVICE_DATA", device.get_device_data_frame())
+            else:
+                _print_response("GET_DEVICE_DATA", device.get_device_data())
             return 0
 
         if args.command == "stop":
-            _print_frame("STOP", device.stop(channel=args.channel))
+            frame = device.stop(channel=args.channel)
+            if args.dry_run:
+                _print_frame("STOP", frame)
+            else:
+                _print_response("STOP", device.last_response)
             return 0
 
         if args.command == "pwm" and args.pwm_command == "start":
-            _print_frame("PWM_START", device.pwm_start(args.channel, args.freq, args.duty))
+            frame = device.pwm_start(args.channel, args.freq, args.duty)
+            if args.dry_run:
+                _print_frame("PWM_START", frame)
+            else:
+                _print_response("PWM_START", device.last_response)
             return 0
 
         if args.command == "pwm" and args.pwm_command == "stop":
-            _print_frame("PWM_STOP", device.pwm_stop(args.channel))
+            frame = device.pwm_stop(args.channel)
+            if args.dry_run:
+                _print_frame("PWM_STOP", frame)
+            else:
+                _print_response("PWM_STOP", device.last_response)
             return 0
 
         parser.error(f"unsupported command combination: {args}")

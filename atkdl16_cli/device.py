@@ -9,10 +9,11 @@ from .usb import UsbBackend
 class AtkDevice:
     def __init__(self, backend: UsbBackend) -> None:
         self.backend = backend
+        self.last_response = b""
 
     def _send_command(self, command: Command, payload: bytes = b"") -> bytes:
         frame = build_transport_frame(command, payload)
-        self.backend.send_frame(frame)
+        self.last_response = self.backend.send_frame(frame)
         return frame
 
     def get_device_data_frame(self) -> bytes:
