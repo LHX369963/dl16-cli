@@ -82,4 +82,7 @@ def build_transport_frame(
 ) -> bytes:
     inner = build_inner_frame(command, payload)
     crc = crc32_bytes(crc32_atk(inner), crc_byteorder)
-    return (b"\x00" * 8) + b"\x0a" + inner + crc + b"\x0b"
+    # The binary allocates inner_len + 15 bytes, writes 0x0a at offset 8,
+    # copies the inner frame at offset 9, writes 0x0b immediately after the
+    # inner frame, writes CRC32 at inner_len + 10, and leaves the final byte 0.
+    return (b"\x00" * 8) + b"\x0a" + inner + b"\x0b" + crc + b"\x00"

@@ -54,8 +54,9 @@ def test_transport_frame_wraps_inner_frame_with_padding_markers_and_crc():
     assert frame[:8] == b"\x00" * 8
     assert frame[8] == 0x0A
     assert frame[9 : 9 + len(inner)] == inner
-    assert frame[9 + len(inner) : 13 + len(inner)] == expected_crc
-    assert frame[-1] == 0x0B
+    assert frame[9 + len(inner)] == 0x0B
+    assert frame[10 + len(inner) : 14 + len(inner)] == expected_crc
+    assert frame[-1] == 0x00
     assert len(frame) == len(inner) + 15
 
 
