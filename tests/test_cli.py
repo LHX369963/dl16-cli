@@ -91,3 +91,37 @@ def test_cli_non_dry_run_pwm_start_uses_backend_factory(monkeypatch, capsys):
     assert rc == 0
     assert "PWM_START response: 99" in out
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_cli_raw_parameter_setting_dry_run_prints_frame(capsys):
+    rc = main(["--dry-run", "raw", "parameter-setting", "--payload-hex", "11 22"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "PARAMETER_SETTING" in out
+    assert "11031122" in out
+
+
+def test_cli_raw_trigger_dry_run_prints_frames(capsys):
+    commands = [
+        ("simple-trigger", "SIMPLE_TRIGGER", "1202aa"),
+        ("stage-trigger", "STAGE_TRIGGER", "1302aa"),
+        ("serial-trigger", "SERIAL_TRIGGER", "1402aa"),
+    ]
+    for subcommand, label, inner in commands:
+        rc = main(["--dry-run", "raw", subcommand, "--payload-hex", "aa"])
+        out = capsys.readouterr().out
+        assert rc == 0
+        assert label in out
+        assert inner in out
+
+
+def test_cli_raw_non_dry_run_uses_backend_factory(monkeypatch, capsys):
+    import atkdl16_cli.cli as cli
+
+    CliFakeBackend.instances.clear()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    rc = cli.main(["raw", "simple-trigger", "--payload-hex", "aa"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SIMPLE_TRIGGER response: 99" in out
+    assert len(CliFakeBackend.instances[0].sent_frames) == 1

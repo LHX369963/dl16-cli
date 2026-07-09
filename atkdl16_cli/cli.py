@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from .device import AtkDevice
 from .errors import AtkDl16Error
-from .protocol import SUPPORTED_USB_IDS
+from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
 
@@ -40,6 +40,12 @@ def _build_parser() -> argparse.ArgumentParser:
     pwm_stop = pwm_sub.add_parser("stop", help="stop PWM")
     pwm_stop.add_argument("--channel", type=int, required=True)
 
+    raw = sub.add_parser("raw", help="send recovered command IDs with raw hex payloads")
+    raw_sub = raw.add_subparsers(dest="raw_command", required=True)
+    for name in ("parameter-setting", "simple-trigger", "stage-trigger", "serial-trigger"):
+        raw_cmd = raw_sub.add_parser(name, help=f"send raw {name} payload")
+        raw_cmd.add_argument("--payload-hex", required=True, help="payload bytes as hexadecimal, spaces allowed")
+
     return parser
 
 
@@ -52,6 +58,18 @@ def create_backend(dry_run: bool, vid_pid: tuple[int, int] | None, timeout_ms: i
     if dry_run:
         return _dry_backend()
     return PyUsbBackend(vid_pid=vid_pid, timeout_ms=timeout_ms)
+
+
+def _send_raw_command(device: AtkDevice, raw_command: str, payload: bytes) -> tuple[str, bytes]:
+    if raw_command == "parameter-setting":
+        return "PARAMETER_SETTING", device.parameter_setting_raw(payload)
+    if raw_command == "simple-trigger":
+        return "SIMPLE_TRIGGER", device.simple_trigger_raw(payload)
+    if raw_command == "stage-trigger":
+        return "STAGE_TRIGGER", device.stage_trigger_raw(payload)
+    if raw_command == "serial-trigger":
+        return "SERIAL_TRIGGER", device.serial_trigger_raw(payload)
+    raise AssertionError(f"unsupported raw command: {raw_command}")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -96,6 +114,15 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_frame("PWM_STOP", frame)
             else:
                 _print_response("PWM_STOP", device.last_response)
+            return 0
+
+        if args.command == "raw":
+            payload = parse_hex_payload(args.payload_hex)
+            label, frame = _send_raw_command(device, args.raw_command, payload)
+            if args.dry_run:
+                _print_frame(label, frame)
+            else:
+                _print_response(label, device.last_response)
             return 0
 
         parser.error(f"unsupported command combination: {args}")
