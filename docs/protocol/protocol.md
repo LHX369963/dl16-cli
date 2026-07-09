@@ -61,3 +61,23 @@ byte 0: (channel + 1) << 4
 ## Commands not implemented in the first plan
 
 Capture, trigger, and firmware commands remain documented in `docs/protocol/evidence-summary.md` and are intentionally not exposed as sending commands by the dry-run CLI.
+
+## Hardware USB backend stage
+
+Install the optional pyusb dependency before using non-dry-run hardware commands:
+
+```bash
+python3 -m pip install -e '.[usb]'
+```
+
+The hardware backend currently supports only the low-risk commands that already have tested frame builders:
+
+- `atkdl16 list`
+- `atkdl16 info`
+- `atkdl16 stop [--channel N]`
+- `atkdl16 pwm start --channel N --freq HZ --duty PERCENT`
+- `atkdl16 pwm stop --channel N`
+
+The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
+
+Capture, simple trigger, stage trigger, serial trigger, and firmware update remain unavailable in the CLI until their payloads and response formats are fully recovered and separately tested. Firmware flashing is intentionally disabled in this stage.
