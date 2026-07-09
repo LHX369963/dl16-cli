@@ -51,3 +51,12 @@ def test_get_device_data_frame_is_built_without_sending():
     frame = device.get_device_data_frame()
     assert frame == build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert backend.sent_frames == []
+
+
+def test_get_device_data_sends_query_frame():
+    backend = DryRunBackend()
+    device = AtkDevice(backend)
+    response = device.get_device_data()
+    expected = build_transport_frame(Command.GET_DEVICE_DATA, b"")
+    assert response == b""
+    assert backend.sent_frames == [expected]

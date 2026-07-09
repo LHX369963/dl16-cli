@@ -18,6 +18,9 @@ class AtkDevice:
     def get_device_data_frame(self) -> bytes:
         return build_transport_frame(Command.GET_DEVICE_DATA, b"")
 
+    def get_device_data(self) -> bytes:
+        return self.backend.send_frame(self.get_device_data_frame())
+
     def stop(self, channel: int | None = None) -> bytes:
         if channel is None:
             payload = b""

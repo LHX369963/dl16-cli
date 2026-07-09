@@ -148,3 +148,30 @@ def test_pyusb_backend_close_releases_interface_and_disposes_resources():
     backend.close()
     assert dev.claimed == []
     assert dev.disposed is True
+
+class FakeIoEndpoint(FakeEndpoint):
+    def __init__(self, address, max_packet_size=64, read_data=b"\xaa\xbb"):
+        super().__init__(address, max_packet_size)
+        self.read_data = read_data
+
+    def write(self, data, timeout=None):
+        self.writes.append((bytes(data), timeout))
+        return len(data)
+
+    def read(self, size, timeout=None):
+        self.reads.append((size, timeout))
+        return list(self.read_data)
+
+
+def test_pyusb_backend_send_frame_writes_and_reads_response():
+    from atkdl16_cli.usb import PyUsbBackend
+
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=b"\x12\x34")
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil, timeout_ms=250)
+    backend.open()
+    response = backend.send_frame(b"abc")
+    assert out_ep.writes == [(b"abc", 250)]
+    assert in_ep.reads == [(512, 250)]
+    assert response == b"\x12\x34"

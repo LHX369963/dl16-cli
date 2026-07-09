@@ -132,7 +132,16 @@ class PyUsbBackend:
             self.usb_util.dispose_resources(self.device)
 
     def send_frame(self, frame: bytes) -> bytes:
-        raise UsbBackendError("send_frame is not implemented yet")
+        if self.write_endpoint is None:
+            self.open()
+        if self.write_endpoint is None:
+            raise UsbBackendError("could not find USB OUT endpoint")
+        self.write_endpoint.write(frame, timeout=self.timeout_ms)
+        if self.read_endpoint is None:
+            return b""
+        packet_size = int(getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64)
+        data = self.read_endpoint.read(packet_size, timeout=self.timeout_ms)
+        return bytes(data)
 
     def _find_device(self) -> Any | None:
         candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]
