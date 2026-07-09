@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 from .errors import ProtocolError, UsbBackendError
 from .protocol import SUPPORTED_USB_IDS
@@ -62,3 +62,115 @@ class DryRunBackend:
     def send_frame(self, frame: bytes) -> bytes:
         self.sent_frames.append(bytes(frame))
         return b""
+
+
+class PyUsbBackend:
+    def __init__(
+        self,
+        device: Any | None = None,
+        usb_core: Any | None = None,
+        usb_util: Any | None = None,
+        timeout_ms: int = 1000,
+        vid_pid: tuple[int, int] | None = None,
+    ) -> None:
+        self.device = device
+        self.timeout_ms = timeout_ms
+        self.vid_pid = vid_pid
+        self.usb_core = usb_core
+        self.usb_util = usb_util
+        self.write_endpoint: Any | None = None
+        self.read_endpoint: Any | None = None
+        self._claimed = False
+        if self.usb_core is None or self.usb_util is None:
+            try:
+                import usb.core  # type: ignore[import-not-found]
+                import usb.util  # type: ignore[import-not-found]
+            except ImportError as exc:
+                raise PyUsbUnavailableError("pyusb is not installed; install with python3 -m pip install -e '.[usb]'") from exc
+            self.usb_core = self.usb_core or usb.core
+            self.usb_util = self.usb_util or usb.util
+
+    def list_devices(self) -> list[DeviceInfo]:
+        devices = []
+        for item in self.usb_core.find(find_all=True):
+            vid = int(getattr(item, "idVendor"))
+            pid = int(getattr(item, "idProduct"))
+            if self.vid_pid is not None and (vid, pid) != self.vid_pid:
+                continue
+            if is_supported_usb_id(vid, pid):
+                devices.append(
+                    DeviceInfo(
+                        vid=vid,
+                        pid=pid,
+                        bus=getattr(item, "bus", None),
+                        address=getattr(item, "address", None),
+                        path=self._device_path(item),
+                        speed=str(getattr(item, "speed", "unknown")),
+                    )
+                )
+        return devices
+
+    def open(self) -> None:
+        if self.device is None:
+            self.device = self._find_device()
+        if self.device is None:
+            raise UsbBackendError("no supported ATK DL16 device found")
+        if hasattr(self.device, "set_configuration"):
+            self.device.set_configuration()
+        self._detach_kernel_driver(0)
+        self.usb_util.claim_interface(self.device, 0)
+        self._claimed = True
+        self.write_endpoint, self.read_endpoint = self._find_endpoints(self.device)
+        if self.write_endpoint is None:
+            raise UsbBackendError("could not find USB OUT endpoint")
+
+    def close(self) -> None:
+        if self.device is not None and self._claimed:
+            self.usb_util.release_interface(self.device, 0)
+            self._claimed = False
+        if self.device is not None and hasattr(self.usb_util, "dispose_resources"):
+            self.usb_util.dispose_resources(self.device)
+
+    def send_frame(self, frame: bytes) -> bytes:
+        raise UsbBackendError("send_frame is not implemented yet")
+
+    def _find_device(self) -> Any | None:
+        candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]
+        for vid, pid in candidates:
+            dev = self.usb_core.find(idVendor=vid, idProduct=pid)
+            if dev is not None:
+                return dev
+        return None
+
+    def _detach_kernel_driver(self, interface: int) -> None:
+        if not hasattr(self.device, "is_kernel_driver_active"):
+            return
+        try:
+            active = self.device.is_kernel_driver_active(interface)
+        except (NotImplementedError, AttributeError):
+            return
+        if active and hasattr(self.device, "detach_kernel_driver"):
+            self.device.detach_kernel_driver(interface)
+
+    def _find_endpoints(self, device: Any) -> tuple[Any | None, Any | None]:
+        write_endpoint = None
+        read_endpoint = None
+        for config in device:
+            for interface in config:
+                if getattr(interface, "bInterfaceNumber", 0) != 0:
+                    continue
+                for endpoint in interface:
+                    direction = self.usb_util.endpoint_direction(endpoint.bEndpointAddress)
+                    if direction == self.usb_util.ENDPOINT_OUT and write_endpoint is None:
+                        write_endpoint = endpoint
+                    if direction == self.usb_util.ENDPOINT_IN and read_endpoint is None:
+                        read_endpoint = endpoint
+        return write_endpoint, read_endpoint
+
+    @staticmethod
+    def _device_path(device: Any) -> str | None:
+        bus = getattr(device, "bus", None)
+        address = getattr(device, "address", None)
+        if bus is None or address is None:
+            return None
+        return f"{bus}-{address}"
