@@ -55,14 +55,22 @@ inner[1] = payload_len + 1
 inner[2..] = payload bytes
 ```
 
-The lower-level `USBControl::Write(raw, raw_len)` wraps that with a transport frame:
+The lower-level `USBControl::Write(raw, raw_len)` wraps that with a transport frame. The relevant stores in the disassembly are:
+
+- allocate and zero `raw_len + 15` bytes
+- write `0x0a` at offset 8
+- copy `raw_len` bytes at offset 9
+- write `0x0b` at offset `9 + raw_len`
+- write CRC32 at offset `10 + raw_len`
+- leave the final byte zero from the initial memset
 
 ```text
 transport = 8 zero bytes
           + 0x0a
           + inner bytes
-          + crc32(inner bytes), 4 bytes as emitted by the binary
           + 0x0b
+          + crc32(inner bytes), 4 bytes as emitted by the binary
+          + 0x00 trailing/reserved byte
 ```
 
 Observed total length is `raw_len + 15`.
@@ -94,7 +102,7 @@ Evidence:
 Start payload:
 
 ```text
-payload[0] = (channel << 4) | 0x11
+payload[0] = (channel << 4) + 0x11
 payload[1..4] = period_count, 4 bytes, byte order from intToBytes() still to confirm
 payload[5..8] = duty_count, 4 bytes, byte order from intToBytes() still to confirm
 period_count ~= 100_000_000 / frequency_hz
@@ -140,3 +148,12 @@ Observed MCU command headers:
 - `EnterBootloader`: starts with word `0x800a` in memory (instruction immediate `0xffff800a`), copies a 16-byte literal at offset 2, stores word `0x5245` at offset `0x12`, and sends through `SendToMCU`.
 
 Firmware flashing is high-risk and must require an explicit guard flag in the CLI.
+
+
+## Implemented prototype references
+
+The first implementation plan turns the low-risk portions of this evidence into tested code:
+
+- `atkdl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
+- `atkdl16_cli.pwm` for PWM start/stop payloads.
+- `atkdl16_cli.device` and `atkdl16_cli.cli` for dry-run command frame generation.
