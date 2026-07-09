@@ -60,3 +60,19 @@ def test_get_device_data_sends_query_frame():
     expected = build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert response == b""
     assert backend.sent_frames == [expected]
+
+
+def test_raw_parameter_and_trigger_methods_send_expected_frames():
+    backend = DryRunBackend()
+    device = AtkDevice(backend)
+    payload = b"\x11\x22"
+    cases = [
+        (device.parameter_setting_raw, Command.PARAMETER_SETTING),
+        (device.simple_trigger_raw, Command.SIMPLE_TRIGGER),
+        (device.stage_trigger_raw, Command.STAGE_TRIGGER),
+        (device.serial_trigger_raw, Command.SERIAL_TRIGGER),
+    ]
+    for method, command in cases:
+        frame = method(payload)
+        assert frame == build_transport_frame(command, payload)
+    assert backend.sent_frames == [build_transport_frame(command, payload) for _, command in cases]

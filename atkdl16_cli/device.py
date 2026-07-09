@@ -36,3 +36,15 @@ class AtkDevice:
 
     def pwm_stop(self, channel: int) -> bytes:
         return self._send_command(Command.PWM, build_pwm_stop_payload(channel))
+
+    def parameter_setting_raw(self, payload: bytes) -> bytes:
+        return self._send_command(Command.PARAMETER_SETTING, payload)
+
+    def simple_trigger_raw(self, payload: bytes) -> bytes:
+        return self._send_command(Command.SIMPLE_TRIGGER, payload)
+
+    def stage_trigger_raw(self, payload: bytes) -> bytes:
+        return self._send_command(Command.STAGE_TRIGGER, payload)
+
+    def serial_trigger_raw(self, payload: bytes) -> bytes:
+        return self._send_command(Command.SERIAL_TRIGGER, payload)
