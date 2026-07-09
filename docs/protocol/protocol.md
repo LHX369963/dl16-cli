@@ -81,3 +81,25 @@ The hardware backend currently supports only the low-risk commands that already 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
 Capture, simple trigger, stage trigger, serial trigger, and firmware update remain unavailable in the CLI until their payloads and response formats are fully recovered and separately tested. Firmware flashing is intentionally disabled in this stage.
+
+## Raw recovered command CLI
+
+The following commands expose recovered command IDs with caller-supplied payload bytes. They are intended for reverse-engineering experiments and do not imply that the payload schema is fully decoded:
+
+```bash
+atkdl16 --dry-run raw parameter-setting --payload-hex "11 22"
+atkdl16 --dry-run raw simple-trigger --payload-hex "aa"
+atkdl16 --dry-run raw stage-trigger --payload-hex "aa"
+atkdl16 --dry-run raw serial-trigger --payload-hex "aa"
+```
+
+Mapping:
+
+| CLI command | Command ID |
+|---|---:|
+| `raw parameter-setting` | `0x11` |
+| `raw simple-trigger` | `0x12` |
+| `raw stage-trigger` | `0x13` |
+| `raw serial-trigger` | `0x14` |
+
+Use non-dry-run raw commands only when connected to sacrificial or recoverable hardware during protocol experiments.

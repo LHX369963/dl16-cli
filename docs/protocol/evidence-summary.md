@@ -157,3 +157,16 @@ The first implementation plan turns the low-risk portions of this evidence into 
 - `atkdl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
 - `atkdl16_cli.pwm` for PWM start/stop payloads.
 - `atkdl16_cli.device` and `atkdl16_cli.cli` for dry-run command frame generation.
+
+## Capture and trigger call-site evidence
+
+Additional xref notes were generated under `reverse/capture/`.
+
+- `reverse/capture/xrefs.md` shows `Session::OrderStart(...)` calls:
+  - `USBControl::ParameterSetting` at `0xd0198`
+  - `USBControl::SimpleTrigger` at `0xd0587`
+  - `USBControl::SerialTrigger` at `0xd066e`
+  - `USBControl::StageTrigger` at `0xd06e5`
+- `reverse/capture/cfe80_Session::OrderStart_QByteArray_QByteArray_QJsonObject_unsigned_long_long_unsigned_long_long_QVector_signed_char_.s` is the main capture/trigger dispatch function.
+- `reverse/capture/fc3b0_ThreadRead::start_USBControl_int_ThreadWork_.s` shows the read thread calling `USBControl::Read`.
+- `reverse/capture/118970_USBControl::ReadLIBUSB_Data__int_int_int_.s` contains the async read path.
