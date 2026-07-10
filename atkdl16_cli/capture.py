@@ -6,6 +6,70 @@ from dataclasses import dataclass
 from .errors import ProtocolError
 
 _MAX_U40 = (1 << 40) - 1
+_DL16_START = 0x0A
+_DL16_TRAILER = b"\x00\x0b"
+_DL16_PACKET_TYPES = frozenset(range(1, 7))
+
+
+@dataclass(frozen=True)
+class Dl16CapturePacket:
+    """One losslessly decoded packet returned by the DL16 Analysis parser."""
+
+    packet_type: int
+    payload: bytes
+    raw: bytes
+
+    @property
+    def metadata0(self) -> int | None:
+        return self.payload[0] if self.payload else None
+
+    @property
+    def metadata1(self) -> int | None:
+        return self.payload[1] if len(self.payload) >= 2 else None
+
+    @property
+    def body(self) -> bytes:
+        return self.payload[2:]
+
+
+class Dl16StreamParser:
+    """Incrementally split arbitrary USB chunks using the recovered DL16 framing."""
+
+    def __init__(self) -> None:
+        self._buffer = bytearray()
+
+    @property
+    def buffered_bytes(self) -> int:
+        return len(self._buffer)
+
+    def feed(self, data: bytes | bytearray | memoryview) -> list[Dl16CapturePacket]:
+        self._buffer.extend(data)
+        packets: list[Dl16CapturePacket] = []
+        while True:
+            marker = self._buffer.find(_DL16_START)
+            if marker < 0:
+                self._buffer.clear()
+                break
+            if marker:
+                del self._buffer[:marker]
+            if len(self._buffer) < 4:
+                break
+            packet_type = self._buffer[1]
+            if packet_type not in _DL16_PACKET_TYPES:
+                del self._buffer[0]
+                continue
+            payload_length = int.from_bytes(self._buffer[2:4], "little")
+            total_length = payload_length + 6
+            if len(self._buffer) < total_length:
+                break
+            if self._buffer[4 + payload_length : total_length] != _DL16_TRAILER:
+                del self._buffer[0]
+                continue
+            raw = bytes(self._buffer[:total_length])
+            payload = raw[4 : 4 + payload_length]
+            packets.append(Dl16CapturePacket(packet_type=packet_type, payload=payload, raw=raw))
+            del self._buffer[:total_length]
+        return packets
 
 
 @dataclass(frozen=True)

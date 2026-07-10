@@ -1,6 +1,6 @@
 import pytest
 
-from atkdl16_cli.capture import SamplingParameters, build_parameter_setting_payload
+from atkdl16_cli.capture import Dl16StreamParser, SamplingParameters, build_parameter_setting_payload
 from atkdl16_cli.errors import ProtocolError
 
 
@@ -59,3 +59,56 @@ def test_stream_collect_type_rejects_rle_or_buffer():
 def test_parameter_builder_rejects_out_of_range_values(params):
     with pytest.raises(ProtocolError):
         build_parameter_setting_payload(params)
+
+
+def dl16_packet(packet_type: int, payload: bytes) -> bytes:
+    return bytes((0x0A, packet_type)) + len(payload).to_bytes(2, "little") + payload + b"\x00\x0b"
+
+
+def test_stream_parser_decodes_recovered_dl16_packet_layout():
+    raw = dl16_packet(1, b"\x12\x34\xaa\xbb")
+    packets = Dl16StreamParser().feed(raw)
+    assert len(packets) == 1
+    packet = packets[0]
+    assert packet.packet_type == 1
+    assert packet.payload == b"\x12\x34\xaa\xbb"
+    assert packet.metadata0 == 0x12
+    assert packet.metadata1 == 0x34
+    assert packet.body == b"\xaa\xbb"
+    assert packet.raw == raw
+
+
+def test_stream_parser_waits_for_fragmented_packet():
+    raw = dl16_packet(4, b"\x01\x00payload")
+    parser = Dl16StreamParser()
+    assert parser.feed(raw[:3]) == []
+    assert parser.feed(raw[3:7]) == []
+    assert [packet.raw for packet in parser.feed(raw[7:])] == [raw]
+
+
+def test_stream_parser_returns_concatenated_packets():
+    first = dl16_packet(3, b"\x00\x00hello")
+    second = dl16_packet(6, b"\x01\x00")
+    packets = Dl16StreamParser().feed(first + second)
+    assert [(packet.packet_type, packet.body) for packet in packets] == [(3, b"hello"), (6, b"")]
+
+
+def test_stream_parser_discards_noise_and_resynchronizes_after_bad_trailer():
+    malformed = bytes((0x0A, 1, 1, 0, 0xFF, 0x99, 0x0B))
+    valid = dl16_packet(5, b"\x02\x00done")
+    packets = Dl16StreamParser().feed(b"noise" + malformed + valid)
+    assert [packet.raw for packet in packets] == [valid]
+
+
+def test_stream_parser_rejects_unknown_type_and_resynchronizes():
+    unknown = dl16_packet(7, b"\x00\x00")
+    valid = dl16_packet(2, b"\x03\x04")
+    packets = Dl16StreamParser().feed(unknown + valid)
+    assert [packet.packet_type for packet in packets] == [2]
+
+
+def test_packet_short_payload_exposes_missing_metadata_without_guessing():
+    packet = Dl16StreamParser().feed(dl16_packet(1, b"\x7f"))[0]
+    assert packet.metadata0 == 0x7F
+    assert packet.metadata1 is None
+    assert packet.body == b""
