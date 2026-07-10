@@ -1,0 +1,17 @@
+{
+  "triggerLevel": 2,
+  "channelOffset": 0,
+  "enabled": [true, true, true, true],
+  "stages": [
+    {
+      "states": ["rising", "high", "null", "low"],
+      "counter": 1,
+      "contiguous": true
+    },
+    {
+      "states": ["falling", "low", "double", "null"],
+      "counter": 10,
+      "contiguous": false
+    }
+  ]
+}

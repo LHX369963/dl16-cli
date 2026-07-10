@@ -196,3 +196,62 @@ trigger_sample = int((sample_depth // 100) * settingData.triggerPosition)
 ```
 
 When `collectType == 3`, the original function aborts configuration if either RLE or Buffer is enabled (`0xc2e74..0xc2e8c`, `0xc3748..0xc3758`).
+
+## Recovered trigger payloads
+
+Evidence source: `SessionController::start(QJsonObject, int)` and `triggerStringToByte`.
+
+### Trigger nibble encoding
+
+The jump table at `0x1f29800` maps original `triggerType` values 0..5 to these encodings:
+
+| Original type | Meaning | Nibble |
+|---:|---|---:|
+| 0 | null / don't-care | `0x7` |
+| 1 | rising | `0x1` |
+| 2 | high | `0x4` |
+| 3 | falling | `0x2` |
+| 4 | low | `0x0` |
+| 5 | double edge | `0x3` |
+
+The first channel of each pair occupies the high nibble. Disabled channels contribute zero. `triggerStringToByte` uses the same mapping for characters `R`, `1`, `F`, `0`, `C`, and default/X.
+
+### Simple trigger
+
+Evidence range: `0xc3aa8..0xc3c97`.
+
+```text
+packed channel bytes
+byte: 1 when collectType == 2, otherwise 0
+byte: 1 when collectType == 3, otherwise 0
+```
+
+### Stage trigger
+
+Evidence range: `0xc3f20..0xc42df`; repeated for each object in `stageTriggerData.trigger`:
+
+```text
+stage number, 1-based
+stageTriggerData.triggerLevel
+counter, uint16 little-endian
+0x00 when isContiguous, otherwise 0x40
+packed stage condition bytes
+```
+
+Relevant stores/calls: stage number append `0xc4154`, trigger level append `0xc4169`, counter conversion `0xc41b8`, contiguous flag append `0xc4231`, condition packing call `0xc40a1`.
+
+### Serial trigger
+
+Evidence range: `0xc4310..0xc474b`:
+
+```text
+valueChannel + device channel offset
+valueWidth
+valueData, uint16 little-endian
+timeChannel + device channel offset
+timeEdge
+packed startCondition bytes
+packed stopCondition bytes
+```
+
+Relevant appends/conversions: `0xc43c6`, `0xc4407`, `0xc4451`, `0xc44bb`, `0xc44fc`, and condition pack calls `0xc45d5`, `0xc46e6`.

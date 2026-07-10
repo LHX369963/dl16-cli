@@ -1,0 +1,11 @@
+{
+  "valueChannel": 0,
+  "valueWidth": 8,
+  "valueData": 4660,
+  "timeChannel": 1,
+  "timeEdge": 1,
+  "channelOffset": 0,
+  "enabled": [true, true, true, true],
+  "startStates": ["rising", "high", "null", "low"],
+  "stopStates": ["falling", "low", "double", "null"]
+}

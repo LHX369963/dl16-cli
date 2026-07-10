@@ -130,3 +130,46 @@ Payload layout:
 ```
 
 The CLI arguments `set-time`, `sample-index`, and `collect-type` deliberately retain the original application's field names until their complete user-facing value tables are recovered.
+
+## High-level trigger commands
+
+Simple trigger accepts channel states in ascending channel order; the first channel occupies the high nibble:
+
+```bash
+atkdl16 --dry-run trigger simple \
+  --states rising,high,null,low \
+  --enabled 1,1,1,1 \
+  --collect-type 1
+```
+
+State names: `null`, `rising`, `high`, `falling`, `low`, `double`. Aliases `X`, `R`, `1`, `F`, `0`, and `C` are also accepted.
+
+Stage and serial trigger commands consume JSON:
+
+```bash
+atkdl16 --dry-run trigger stage --file examples/stage-trigger.json
+atkdl16 --dry-run trigger serial --file examples/serial-trigger.json
+```
+
+`stage-trigger.json` schema:
+
+```text
+triggerLevel: byte
+channelOffset: even channel count preceding this device segment
+enabled: boolean mask
+stages[]:
+  states[]: trigger state names
+  counter: uint16
+  contiguous: boolean
+```
+
+`serial-trigger.json` schema:
+
+```text
+valueChannel, valueWidth, valueData
+timeChannel, timeEdge
+channelOffset
+enabled[]
+startStates[]
+stopStates[]
+```
