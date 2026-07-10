@@ -76,3 +76,15 @@ def test_raw_parameter_and_trigger_methods_send_expected_frames():
         frame = method(payload)
         assert frame == build_transport_frame(command, payload)
     assert backend.sent_frames == [build_transport_frame(command, payload) for _, command in cases]
+
+
+def test_configure_sampling_sends_recovered_parameter_payload():
+    from atkdl16_cli.capture import SamplingParameters, build_parameter_setting_payload
+
+    backend = DryRunBackend()
+    device = AtkDevice(backend)
+    params = SamplingParameters(10, 100_000_000, 25, -1.2, 3, True, False, 1)
+    frame = device.configure_sampling(params)
+    expected = build_transport_frame(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
+    assert frame == expected
+    assert backend.sent_frames == [expected]

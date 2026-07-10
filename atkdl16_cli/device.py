@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from .capture import SamplingParameters, build_parameter_setting_payload
 from .errors import ProtocolError
 from .protocol import Command, build_transport_frame
 from .pwm import build_pwm_start_payload, build_pwm_stop_payload
@@ -36,6 +37,10 @@ class AtkDevice:
 
     def pwm_stop(self, channel: int) -> bytes:
         return self._send_command(Command.PWM, build_pwm_stop_payload(channel))
+
+
+    def configure_sampling(self, params: SamplingParameters) -> bytes:
+        return self._send_command(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
 
     def parameter_setting_raw(self, payload: bytes) -> bytes:
         return self._send_command(Command.PARAMETER_SETTING, payload)

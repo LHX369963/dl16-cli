@@ -125,3 +125,33 @@ def test_cli_raw_non_dry_run_uses_backend_factory(monkeypatch, capsys):
     assert rc == 0
     assert "SIMPLE_TRIGGER response: 99" in out
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_cli_capture_configure_dry_run_prints_recovered_payload(capsys):
+    rc = main([
+        "--dry-run", "capture", "configure",
+        "--set-time", "10", "--set-hz", "100000000",
+        "--trigger-position", "25", "--threshold", "-1.2",
+        "--sample-index", "3", "--rle", "--collect-type", "1",
+    ])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "PARAMETER_SETTING" in out
+    assert "110e808c03" in out
+    assert (1_000_000).to_bytes(5, "little").hex() in out
+    assert (250_000).to_bytes(5, "little").hex() in out
+
+
+def test_cli_capture_configure_non_dry_run_uses_backend(monkeypatch, capsys):
+    import atkdl16_cli.cli as cli
+
+    CliFakeBackend.instances.clear()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    rc = cli.main([
+        "capture", "configure", "--set-time", "1", "--set-hz", "1000000",
+        "--trigger-position", "50", "--threshold", "1.0", "--sample-index", "2",
+    ])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "PARAMETER_SETTING response: 99" in out
+    assert len(CliFakeBackend.instances[0].sent_frames) == 1

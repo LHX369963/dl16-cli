@@ -4,6 +4,7 @@ import argparse
 import sys
 from collections.abc import Sequence
 
+from .capture import SamplingParameters
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
@@ -39,6 +40,18 @@ def _build_parser() -> argparse.ArgumentParser:
     pwm_start.add_argument("--duty", type=float, required=True)
     pwm_stop = pwm_sub.add_parser("stop", help="stop PWM")
     pwm_stop.add_argument("--channel", type=int, required=True)
+
+    capture = sub.add_parser("capture", help="capture configuration and acquisition")
+    capture_sub = capture.add_subparsers(dest="capture_command", required=True)
+    configure = capture_sub.add_parser("configure", help="send recovered sampling parameters")
+    configure.add_argument("--set-time", type=float, required=True, help="original settingData.setTime value")
+    configure.add_argument("--set-hz", type=int, required=True, help="sampling frequency in Hz")
+    configure.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
+    configure.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
+    configure.add_argument("--sample-index", type=int, required=True, help="original settingData.index value")
+    configure.add_argument("--rle", action="store_true", help="enable hardware RLE flag")
+    configure.add_argument("--buffer", action="store_true", help="enable buffer mode flag")
+    configure.add_argument("--collect-type", type=int, default=1, help="original collectType value")
 
     raw = sub.add_parser("raw", help="send recovered command IDs with raw hex payloads")
     raw_sub = raw.add_subparsers(dest="raw_command", required=True)
@@ -114,6 +127,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_frame("PWM_STOP", frame)
             else:
                 _print_response("PWM_STOP", device.last_response)
+            return 0
+
+        if args.command == "capture" and args.capture_command == "configure":
+            params = SamplingParameters(
+                set_time=args.set_time,
+                set_hz=args.set_hz,
+                trigger_position_percent=args.trigger_position,
+                threshold_level=args.threshold,
+                sample_index=args.sample_index,
+                is_rle=args.rle,
+                is_buffer=args.buffer,
+                collect_type=args.collect_type,
+            )
+            frame = device.configure_sampling(params)
+            if args.dry_run:
+                _print_frame("PARAMETER_SETTING", frame)
+            else:
+                _print_response("PARAMETER_SETTING", device.last_response)
             return 0
 
         if args.command == "raw":
