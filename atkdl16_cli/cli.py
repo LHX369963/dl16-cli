@@ -6,7 +6,13 @@ import sys
 from pathlib import Path
 from collections.abc import Sequence
 
-from .capture import Dl16CapturePacket, Dl16StreamParser, SamplingParameters, decode_channel_packet
+from .capture import (
+    Dl16CapturePacket,
+    Dl16StreamParser,
+    SamplingParameters,
+    decode_channel_packet,
+    interpret_capture_packet,
+)
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .firmware import (
@@ -166,15 +172,14 @@ def _states_from_json(values: object):
     return parse_trigger_states(",".join(str(item) for item in values))
 
 
-def _packet_summary(index: int, packet: Dl16CapturePacket) -> dict[str, int | None]:
-    return {
+def _packet_summary(index: int, packet: Dl16CapturePacket) -> dict[str, object]:
+    summary: dict[str, object] = {
         "index": index,
-        "type": packet.packet_type,
         "payload_length": len(packet.payload),
-        "metadata0": packet.metadata0,
-        "metadata1": packet.metadata1,
         "body_length": len(packet.body),
     }
+    summary.update(interpret_capture_packet(packet))
+    return summary
 
 
 def _print_packet_summary(index: int, packet: Dl16CapturePacket) -> None:

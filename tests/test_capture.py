@@ -6,6 +6,7 @@ from atkdl16_cli.capture import (
     decode_channel_packet,
     decode_rle_pairs,
     iter_sample_bits,
+    interpret_capture_packet,
     build_parameter_setting_payload,
 )
 from atkdl16_cli.errors import ProtocolError
@@ -150,3 +151,38 @@ def test_channel_packet_decoder_rejects_non_data_packet():
     packet = Dl16StreamParser().feed(dl16_packet(4, b"\x15\x00"))[0]
     with pytest.raises(ProtocolError, match="type 1"):
         decode_channel_packet(packet)
+
+
+@pytest.mark.parametrize("packet_type", [3, 5])
+def test_control_value_packets_expose_recovered_u40_without_assigning_unknown_semantics(packet_type):
+    packet = Dl16StreamParser().feed(
+        dl16_packet(packet_type, b"\x00\x00\x78\x56\x34\x12\x01")
+    )[0]
+    assert interpret_capture_packet(packet) == {
+        "type": packet_type,
+        "metadata0": 0,
+        "metadata1": 0,
+        "value_u40": 0x0112345678,
+    }
+
+
+def test_type4_control_packet_exposes_subcommand_and_status_bytes():
+    packet = Dl16StreamParser().feed(dl16_packet(4, b"\x00\x00\x12\x03\xaa"))[0]
+    assert interpret_capture_packet(packet) == {
+        "type": 4,
+        "metadata0": 0,
+        "metadata1": 0,
+        "control_command": 0x12,
+        "control_status": 0x03,
+        "control_extra_hex": "aa",
+    }
+
+
+def test_unknown_or_short_control_fields_remain_absent():
+    packet = Dl16StreamParser().feed(dl16_packet(2, b"\x01"))[0]
+    assert interpret_capture_packet(packet) == {
+        "type": 2,
+        "metadata0": 1,
+        "metadata1": None,
+        "body_hex": "",
+    }

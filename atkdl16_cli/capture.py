@@ -123,6 +123,29 @@ def decode_channel_packet(packet: Dl16CapturePacket, *, is_rle: bool = False) ->
     )
 
 
+def interpret_capture_packet(packet: Dl16CapturePacket) -> dict[str, object]:
+    """Expose only receive-thread fields whose byte access is proven by disassembly."""
+
+    result: dict[str, object] = {
+        "type": packet.packet_type,
+        "metadata0": packet.metadata0,
+        "metadata1": packet.metadata1,
+    }
+    if packet.packet_type in (3, 5) and len(packet.body) >= 5:
+        result["value_u40"] = int.from_bytes(packet.body[:5], "little")
+        if len(packet.body) > 5:
+            result["extra_hex"] = packet.body[5:].hex()
+    elif packet.packet_type == 4 and packet.body:
+        result["control_command"] = packet.body[0]
+        if len(packet.body) >= 2:
+            result["control_status"] = packet.body[1]
+        if len(packet.body) > 2:
+            result["control_extra_hex"] = packet.body[2:].hex()
+    else:
+        result["body_hex"] = packet.body.hex()
+    return result
+
+
 @dataclass(frozen=True)
 class SamplingParameters:
     set_time: float

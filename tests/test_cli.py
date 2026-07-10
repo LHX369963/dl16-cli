@@ -198,16 +198,19 @@ def test_cli_capture_parse_prints_json_lines_for_saved_wire_stream(tmp_path, cap
     path = tmp_path / "capture.bin"
     path.write_bytes(
         _capture_packet(1, b"\x12\x34\xaa\xbb")
+        + _capture_packet(3, b"\x00\x00\x78\x56\x34\x12\x01")
         + _capture_packet(6, b"\x01\x00")
     )
     rc = main(["capture", "parse", "--input", str(path)])
     lines = capsys.readouterr().out.splitlines()
     assert rc == 0
-    assert len(lines) == 2
+    assert len(lines) == 3
     assert '"type": 1' in lines[0]
     assert '"metadata0": 18' in lines[0]
     assert '"body_length": 2' in lines[0]
-    assert '"type": 6' in lines[1]
+    assert '"type": 3' in lines[1]
+    assert '"value_u40": 4600387192' in lines[1]
+    assert '"type": 6' in lines[2]
 
 
 def test_cli_capture_read_writes_lossless_packets_from_fragmented_usb_chunks(
