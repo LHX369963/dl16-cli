@@ -85,7 +85,7 @@ The hardware backend exposes the tested command builders plus independent bulk-I
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
-Firmware flashing remains intentionally disabled until its separate MCU framing, acknowledgements, and recovery procedure are fully decoded.
+Firmware frame planning is available offline. Hardware flashing is exposed only behind the explicit `--i-understand-this-can-brick` guard and should be used only after entering the bootloader and confirming the correct transport mode.
 
 ## Raw recovered command CLI
 
@@ -237,3 +237,68 @@ atkdl16 capture decode --input wire-rle.bin --output-dir decoded-rle --rle
 ```
 
 The output directory contains `channel-NN.bin` files and `manifest.json`. Packed files retain the LSB-first eight-samples-per-byte representation.
+
+## MCU and firmware update protocol
+
+Firmware transfer does not use the normal command/CRC wrapper. Two MCU transport modes exist:
+
+- `framed-510`: every write is 510 bytes; synchronous ACK reads are 512 bytes in the original application.
+- `direct-64`: every write and ACK read is 64 bytes; update data is sent directly and zero-padded.
+
+Fixed framed commands:
+
+| Command | Meaning | Prefix |
+|---:|---|---|
+| `0x80` | Enter bootloader | `0a 80 "ATK-LOGIC-ANALYZER"` |
+| `0x81` | Get MCU version | `0a 81 0b` |
+| `0x82` | Enter MCU update | `0a 82 "ATK-LOGIC-ANALYZER-MCU-V1"` |
+| `0x83` | MCU firmware data | framed data layout below |
+| `0x84` | Restart MCU | `0a 84 0b` |
+| `0x85` | Enter FPGA update | `0a 85 "ATK-LOGIC-ANALYZER-FPGA-V1"` |
+| `0x86` | FPGA firmware data | framed data layout below |
+
+Framed update data:
+
+```text
+0       0x0a
+1       0x83 for MCU or 0x86 for FPGA
+2..3    data length, uint16 little-endian, maximum 504
+4..     firmware bytes
+4+N     0x00
+5+N     0x0b
+...     zero padding to 510 bytes
+```
+
+The original downloader uses 256-byte chunks in `framed-510` mode and 64-byte chunks in `direct-64` mode. It always sends one final remainder frame, including a zero-length frame when the file size is an exact multiple.
+
+ACK success is recognized from the first three response bytes:
+
+```text
+0a <expected-command> 01
+```
+
+It tries up to six reads with 50 ms between failures. Before the final data ACK it waits 1 second for MCU and 5 seconds for FPGA. In direct-64 mode, data ACK command `0x86` is expected for both target types, matching the original branch.
+
+Generate and inspect every write offline first:
+
+```bash
+atkdl16 firmware plan --file firmware.bin --target mcu \
+  --mode framed-510 --output-dir firmware-plan
+```
+
+Query the currently attached MCU endpoint or request the application-to-bootloader transition:
+
+```bash
+atkdl16 firmware version --mode framed-510
+atkdl16 firmware enter-bootloader --mode framed-510 \
+  --i-understand-this-can-brick
+```
+
+After allowing USB re-enumeration, selecting the bootloader device, and confirming the correct mode, the guarded update command is:
+
+```bash
+atkdl16 --vid-pid VID:PID firmware flash --file firmware.bin \
+  --target mcu --mode framed-510 --i-understand-this-can-brick
+```
+
+The flash command sends enter-update, all data frames with ACK validation, then restart. The initial bootloader request and post-request USB re-enumeration remain separate CLI steps so the newly enumerated device can be selected explicitly.

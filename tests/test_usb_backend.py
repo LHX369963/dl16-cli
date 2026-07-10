@@ -209,3 +209,46 @@ def test_dry_run_backend_returns_queued_read_chunks():
     assert backend.read_chunk() == b"one"
     assert backend.read_chunk() == b"two"
     assert backend.read_chunk() == b""
+
+
+def test_pyusb_backend_write_chunk_does_not_consume_ack():
+    from atkdl16_cli.usb import PyUsbBackend
+
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=b"ack")
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(
+        device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil, timeout_ms=250
+    )
+    assert backend.write_chunk(b"firmware") == 8
+    assert out_ep.writes == [(b"firmware", 250)]
+    assert in_ep.reads == []
+
+
+def test_dry_run_backend_records_write_chunks_separately():
+    from atkdl16_cli.usb import DryRunBackend
+
+    backend = DryRunBackend()
+    assert backend.write_chunk(b"one") == 3
+    assert backend.written_chunks == [b"one"]
+
+
+def test_pyusb_backend_wraps_endpoint_io_errors():
+    from atkdl16_cli.errors import UsbBackendError
+    from atkdl16_cli.usb import PyUsbBackend
+
+    class BrokenEndpoint(FakeIoEndpoint):
+        def write(self, data, timeout=None):
+            raise RuntimeError("write failed")
+
+        def read(self, size, timeout=None):
+            raise RuntimeError("read failed")
+
+    out_ep = BrokenEndpoint(0x02, 512)
+    in_ep = BrokenEndpoint(0x81, 512)
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
+    with pytest.raises(UsbBackendError, match="write failed"):
+        backend.write_chunk(b"x")
+    with pytest.raises(UsbBackendError, match="read failed"):
+        backend.read_chunk()

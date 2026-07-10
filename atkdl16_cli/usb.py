@@ -53,6 +53,9 @@ class UsbBackend(Protocol):
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         raise NotImplementedError
 
+    def write_chunk(self, data: bytes, timeout_ms: int | None = None) -> int:
+        raise NotImplementedError
+
 
 class DryRunBackend:
     def __init__(
@@ -63,6 +66,7 @@ class DryRunBackend:
         self._devices = list(devices or [])
         self._read_chunks = [bytes(chunk) for chunk in (read_chunks or [])]
         self.sent_frames: list[bytes] = []
+        self.written_chunks: list[bytes] = []
 
     def list_devices(self) -> list[DeviceInfo]:
         return list(self._devices)
@@ -74,6 +78,12 @@ class DryRunBackend:
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         del size, timeout_ms
         return self._read_chunks.pop(0) if self._read_chunks else b""
+
+    def write_chunk(self, data: bytes, timeout_ms: int | None = None) -> int:
+        del timeout_ms
+        chunk = bytes(data)
+        self.written_chunks.append(chunk)
+        return len(chunk)
 
 
 class PyUsbBackend:
@@ -144,16 +154,25 @@ class PyUsbBackend:
             self.usb_util.dispose_resources(self.device)
 
     def send_frame(self, frame: bytes) -> bytes:
-        if self.write_endpoint is None:
-            self.open()
-        if self.write_endpoint is None:
-            raise UsbBackendError("could not find USB OUT endpoint")
-        self.write_endpoint.write(frame, timeout=self.timeout_ms)
+        self.write_chunk(frame)
         if self.read_endpoint is None:
             return b""
         packet_size = int(getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64)
         data = self.read_endpoint.read(packet_size, timeout=self.timeout_ms)
         return bytes(data)
+
+    def write_chunk(self, data: bytes, timeout_ms: int | None = None) -> int:
+        if self.write_endpoint is None:
+            self.open()
+        if self.write_endpoint is None:
+            raise UsbBackendError("could not find USB OUT endpoint")
+        timeout = self.timeout_ms if timeout_ms is None else timeout_ms
+        if not isinstance(timeout, int) or timeout <= 0:
+            raise ProtocolError(f"USB timeout must be a positive integer, got {timeout!r}")
+        try:
+            return int(self.write_endpoint.write(bytes(data), timeout=timeout))
+        except Exception as exc:
+            raise UsbBackendError(f"USB write failed: {exc}") from exc
 
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         if self.read_endpoint is None:
@@ -168,7 +187,10 @@ class PyUsbBackend:
         timeout = self.timeout_ms if timeout_ms is None else timeout_ms
         if not isinstance(timeout, int) or timeout <= 0:
             raise ProtocolError(f"USB timeout must be a positive integer, got {timeout!r}")
-        return bytes(self.read_endpoint.read(read_size, timeout=timeout))
+        try:
+            return bytes(self.read_endpoint.read(read_size, timeout=timeout))
+        except Exception as exc:
+            raise UsbBackendError(f"USB read failed: {exc}") from exc
 
     def _find_device(self) -> Any | None:
         candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]

@@ -8,3 +8,7 @@ class ProtocolError(AtkDl16Error):
 
 class UsbBackendError(AtkDl16Error):
     """Raised when the selected USB backend cannot complete an operation."""
+
+
+class FirmwareUpdateError(AtkDl16Error):
+    """Raised when a guarded firmware update does not receive the recovered acknowledgement."""
