@@ -46,3 +46,59 @@ def test_simple_trigger_appends_collect_type_flags():
 def test_trigger_state_parser_rejects_invalid_input(text):
     with pytest.raises(ProtocolError):
         parse_trigger_states(text)
+
+
+def test_stage_trigger_payload_matches_recovered_layout():
+    from atkdl16_cli.trigger import StageCondition, build_stage_trigger_payload
+
+    stages = [
+        StageCondition([TriggerState.RISING, TriggerState.HIGH], counter=0x1234, contiguous=False),
+        StageCondition([TriggerState.FALLING, TriggerState.LOW], counter=1, contiguous=True),
+    ]
+    assert build_stage_trigger_payload(stages, trigger_level=2) == bytes.fromhex(
+        "010234124014"  # stage 1, level, counter LE, non-contiguous flag, states
+        "020201000020"  # stage 2
+    )
+
+
+def test_stage_trigger_applies_enabled_mask_and_channel_offset():
+    from atkdl16_cli.trigger import StageCondition, build_stage_trigger_payload
+
+    payload = build_stage_trigger_payload(
+        [StageCondition([TriggerState.NULL, TriggerState.RISING], counter=0, contiguous=True)],
+        trigger_level=1,
+        enabled=[False, True],
+        channel_offset=2,
+    )
+    assert payload == bytes.fromhex("01010000000001")
+
+
+def test_serial_trigger_payload_matches_recovered_layout():
+    from atkdl16_cli.trigger import SerialTriggerConfig, build_serial_trigger_payload
+
+    config = SerialTriggerConfig(
+        value_channel=1,
+        value_width=8,
+        value_data=0x1234,
+        time_channel=2,
+        time_edge=1,
+        start_states=[TriggerState.RISING, TriggerState.HIGH],
+        stop_states=[TriggerState.FALLING, TriggerState.LOW],
+        channel_offset=2,
+    )
+    assert build_serial_trigger_payload(config) == bytes.fromhex("03083412040100140020")
+
+
+@pytest.mark.parametrize(
+    "builder",
+    [
+        lambda: __import__("atkdl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload([], trigger_level=0),
+        lambda: __import__("atkdl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload(
+            [__import__("atkdl16_cli.trigger", fromlist=["*"]).StageCondition([TriggerState.RISING], 70000, True)],
+            trigger_level=0,
+        ),
+    ],
+)
+def test_advanced_trigger_validation(builder):
+    with pytest.raises(ProtocolError):
+        builder()
