@@ -1,5 +1,3 @@
-import binascii
-
 import pytest
 
 from atkdl16_cli.errors import ProtocolError
@@ -33,8 +31,10 @@ def test_command_values_match_reverse_evidence():
     assert Command.PWM == 0x17
 
 
-def test_crc32_uses_standard_seed_until_binary_vector_is_recovered():
-    assert crc32_atk(b"\x17\x0a\x11") == binascii.crc32(b"\x17\x0a\x11") & 0xFFFFFFFF
+def test_crc32_matches_recovered_zero_seed_final_inversion_vectors():
+    assert crc32_atk(b"") == 0xFFFFFFFF
+    assert crc32_atk(b"123456789") == 0xD202D277
+    assert crc32_atk(b"\x17\x0a\x11") == 0x76C98272
 
 
 def test_crc32_bytes_supports_explicit_byte_order():

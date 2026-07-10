@@ -25,11 +25,21 @@ The current implementation follows the observed `USBControl::Write(raw, raw_len)
 1 byte : 0a
 N bytes: inner frame
 1 byte : 0b
-4 bytes: CRC32(inner frame), little-endian in the prototype
+4 bytes: recovered gCRC32(inner frame), little-endian
 1 byte : 00 reserved/trailing byte from the binary allocation
 ```
 
-The original binary function is named `gCRC32`. The prototype uses standard CRC32 until a recovered vector proves the exact original parameters.
+The original `gCRC32` uses the standard reflected CRC-32 table (`0xedb88320` polynomial), but starts the accumulator at zero and returns its bitwise complement. This differs from the common CRC-32/ISO-HDLC initial state.
+
+```text
+width   = 32
+poly    = 0x04c11db7 (reflected table uses 0xedb88320)
+refin   = true
+refout  = true
+init    = 0x00000000
+xorout  = 0xffffffff
+check("123456789") = 0xd202d277
+```
 
 ## Implemented command IDs
 

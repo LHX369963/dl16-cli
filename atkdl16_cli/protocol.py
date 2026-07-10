@@ -48,14 +48,11 @@ def _command_byte(command: int | Command) -> int:
 
 
 def crc32_atk(data: bytes) -> int:
-    """Return the CRC32 used by the current prototype.
+    """Return the exact recovered `gCRC32`: reflected CRC-32, seed 0, final NOT."""
 
-    The original binary calls a function named gCRC32. Until a recovered vector
-    proves different seed/xor behavior, this function intentionally uses
-    Python's standard CRC32 and masks to an unsigned 32-bit value.
-    """
-
-    return binascii.crc32(data) & 0xFFFFFFFF
+    # Python's public initial value represents the previously finalized CRC.
+    # Passing 0xffffffff therefore selects the binary's internal zero seed.
+    return binascii.crc32(data, 0xFFFFFFFF) & 0xFFFFFFFF
 
 
 def crc32_bytes(value: int, byteorder: Literal["little", "big"] = "little") -> bytes:
