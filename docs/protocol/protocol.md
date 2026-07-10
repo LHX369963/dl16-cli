@@ -103,3 +103,30 @@ Mapping:
 | `raw serial-trigger` | `0x14` |
 
 Use non-dry-run raw commands only when connected to sacrificial or recoverable hardware during protocol experiments.
+
+## Recovered sampling configuration
+
+The high-level CLI can now construct the recovered 13-byte `ParameterSetting` payload:
+
+```bash
+atkdl16 --dry-run capture configure \
+  --set-time 10 \
+  --set-hz 100000000 \
+  --trigger-position 25 \
+  --threshold -1.2 \
+  --sample-index 3 \
+  --rle \
+  --collect-type 1
+```
+
+Payload layout:
+
+```text
+0      flags: 0x80 RLE, 0x40 Buffer
+1      threshold in 0.1 V sign-magnitude form
+2      sampling index
+3..7   sample depth, unsigned 40-bit little-endian
+8..12  trigger sample position, unsigned 40-bit little-endian
+```
+
+The CLI arguments `set-time`, `sample-index`, and `collect-type` deliberately retain the original application's field names until their complete user-facing value tables are recovered.
