@@ -88,3 +88,26 @@ def test_configure_sampling_sends_recovered_parameter_payload():
     expected = build_transport_frame(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
     assert frame == expected
     assert backend.sent_frames == [expected]
+
+
+def test_high_level_trigger_methods_send_built_payloads():
+    from atkdl16_cli.trigger import (
+        SerialTriggerConfig,
+        StageCondition,
+        TriggerState,
+        build_serial_trigger_payload,
+        build_simple_trigger_payload,
+        build_stage_trigger_payload,
+    )
+
+    backend = DryRunBackend()
+    device = AtkDevice(backend)
+    states = [TriggerState.RISING, TriggerState.HIGH]
+    simple = device.configure_simple_trigger(states, collect_type=1)
+    stages = [StageCondition(states, 0x1234, False)]
+    stage = device.configure_stage_trigger(stages, trigger_level=2)
+    serial_config = SerialTriggerConfig(1, 8, 0x1234, 2, 1, states, [TriggerState.FALLING, TriggerState.LOW], 2)
+    serial = device.configure_serial_trigger(serial_config)
+    assert simple == build_transport_frame(Command.SIMPLE_TRIGGER, build_simple_trigger_payload(states))
+    assert stage == build_transport_frame(Command.STAGE_TRIGGER, build_stage_trigger_payload(stages, trigger_level=2))
+    assert serial == build_transport_frame(Command.SERIAL_TRIGGER, build_serial_trigger_payload(serial_config))

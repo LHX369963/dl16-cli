@@ -155,3 +155,31 @@ def test_cli_capture_configure_non_dry_run_uses_backend(monkeypatch, capsys):
     assert rc == 0
     assert "PARAMETER_SETTING response: 99" in out
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_cli_trigger_simple_dry_run(capsys):
+    rc = main(["--dry-run", "trigger", "simple", "--states", "rising,high", "--collect-type", "1"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SIMPLE_TRIGGER" in out
+    assert "1204140000" in out
+
+
+def test_cli_trigger_stage_json_dry_run(tmp_path, capsys):
+    path = tmp_path / "stage.json"
+    path.write_text('{"triggerLevel":2,"enabled":[true,true],"stages":[{"states":["rising","high"],"counter":4660,"contiguous":false}]}')
+    rc = main(["--dry-run", "trigger", "stage", "--file", str(path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "STAGE_TRIGGER" in out
+    assert "1307010234124014" in out
+
+
+def test_cli_trigger_serial_json_dry_run(tmp_path, capsys):
+    path = tmp_path / "serial.json"
+    path.write_text('{"valueChannel":1,"valueWidth":8,"valueData":4660,"timeChannel":2,"timeEdge":1,"channelOffset":2,"startStates":["rising","high"],"stopStates":["falling","low"]}')
+    rc = main(["--dry-run", "trigger", "serial", "--file", str(path)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "SERIAL_TRIGGER" in out
+    assert "140b03083412040100140020" in out

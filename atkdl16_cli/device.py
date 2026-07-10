@@ -4,6 +4,14 @@ from .capture import SamplingParameters, build_parameter_setting_payload
 from .errors import ProtocolError
 from .protocol import Command, build_transport_frame
 from .pwm import build_pwm_start_payload, build_pwm_stop_payload
+from .trigger import (
+    SerialTriggerConfig,
+    StageCondition,
+    TriggerState,
+    build_serial_trigger_payload,
+    build_simple_trigger_payload,
+    build_stage_trigger_payload,
+)
 from .usb import UsbBackend
 
 
@@ -44,6 +52,36 @@ class AtkDevice:
 
     def parameter_setting_raw(self, payload: bytes) -> bytes:
         return self._send_command(Command.PARAMETER_SETTING, payload)
+
+
+    def configure_simple_trigger(
+        self,
+        states: list[TriggerState],
+        *,
+        enabled: list[bool] | None = None,
+        collect_type: int = 1,
+        channel_offset: int = 0,
+    ) -> bytes:
+        payload = build_simple_trigger_payload(
+            states, enabled=enabled, collect_type=collect_type, channel_offset=channel_offset
+        )
+        return self._send_command(Command.SIMPLE_TRIGGER, payload)
+
+    def configure_stage_trigger(
+        self,
+        stages: list[StageCondition],
+        *,
+        trigger_level: int,
+        enabled: list[bool] | None = None,
+        channel_offset: int = 0,
+    ) -> bytes:
+        payload = build_stage_trigger_payload(
+            stages, trigger_level=trigger_level, enabled=enabled, channel_offset=channel_offset
+        )
+        return self._send_command(Command.STAGE_TRIGGER, payload)
+
+    def configure_serial_trigger(self, config: SerialTriggerConfig) -> bytes:
+        return self._send_command(Command.SERIAL_TRIGGER, build_serial_trigger_payload(config))
 
     def simple_trigger_raw(self, payload: bytes) -> bytes:
         return self._send_command(Command.SIMPLE_TRIGGER, payload)

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 from collections.abc import Sequence
 
 from .capture import SamplingParameters
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
+from .trigger import SerialTriggerConfig, StageCondition, parse_trigger_states
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
 
@@ -53,6 +56,18 @@ def _build_parser() -> argparse.ArgumentParser:
     configure.add_argument("--buffer", action="store_true", help="enable buffer mode flag")
     configure.add_argument("--collect-type", type=int, default=1, help="original collectType value")
 
+    trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
+    trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
+    simple = trigger_sub.add_parser("simple", help="configure simple per-channel trigger")
+    simple.add_argument("--states", required=True, help="comma-separated states in channel order")
+    simple.add_argument("--enabled", default=None, help="optional comma-separated 1/0 channel mask")
+    simple.add_argument("--collect-type", type=int, default=1)
+    simple.add_argument("--channel-offset", type=int, default=0)
+    stage = trigger_sub.add_parser("stage", help="configure staged trigger from JSON")
+    stage.add_argument("--file", required=True)
+    serial = trigger_sub.add_parser("serial", help="configure serial trigger from JSON")
+    serial.add_argument("--file", required=True)
+
     raw = sub.add_parser("raw", help="send recovered command IDs with raw hex payloads")
     raw_sub = raw.add_subparsers(dest="raw_command", required=True)
     for name in ("parameter-setting", "simple-trigger", "stage-trigger", "serial-trigger"):
@@ -83,6 +98,31 @@ def _send_raw_command(device: AtkDevice, raw_command: str, payload: bytes) -> tu
     if raw_command == "serial-trigger":
         return "SERIAL_TRIGGER", device.serial_trigger_raw(payload)
     raise AssertionError(f"unsupported raw command: {raw_command}")
+
+
+def _parse_enabled(text: str | None) -> list[bool] | None:
+    if text is None:
+        return None
+    values = [item.strip() for item in text.split(",")]
+    if any(item not in {"0", "1"} for item in values):
+        raise AtkDl16Error("enabled mask must contain only comma-separated 0/1 values")
+    return [item == "1" for item in values]
+
+
+def _load_json_object(path: str) -> dict:
+    try:
+        value = json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        raise AtkDl16Error(f"cannot read trigger JSON {path!r}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise AtkDl16Error("trigger JSON root must be an object")
+    return value
+
+
+def _states_from_json(values: object):
+    if not isinstance(values, list) or not values:
+        raise AtkDl16Error("trigger state field must be a non-empty array")
+    return parse_trigger_states(",".join(str(item) for item in values))
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -127,6 +167,65 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_frame("PWM_STOP", frame)
             else:
                 _print_response("PWM_STOP", device.last_response)
+            return 0
+
+        if args.command == "trigger" and args.trigger_command == "simple":
+            frame = device.configure_simple_trigger(
+                parse_trigger_states(args.states),
+                enabled=_parse_enabled(args.enabled),
+                collect_type=args.collect_type,
+                channel_offset=args.channel_offset,
+            )
+            if args.dry_run:
+                _print_frame("SIMPLE_TRIGGER", frame)
+            else:
+                _print_response("SIMPLE_TRIGGER", device.last_response)
+            return 0
+
+        if args.command == "trigger" and args.trigger_command == "stage":
+            data = _load_json_object(args.file)
+            raw_stages = data.get("stages")
+            if not isinstance(raw_stages, list) or not raw_stages:
+                raise AtkDl16Error("stage trigger JSON requires a non-empty stages array")
+            stages = []
+            for item in raw_stages:
+                if not isinstance(item, dict):
+                    raise AtkDl16Error("each stage must be an object")
+                stages.append(StageCondition(
+                    _states_from_json(item.get("states")),
+                    int(item.get("counter", 0)),
+                    bool(item.get("contiguous", True)),
+                ))
+            frame = device.configure_stage_trigger(
+                stages,
+                trigger_level=int(data.get("triggerLevel", 0)),
+                enabled=data.get("enabled"),
+                channel_offset=int(data.get("channelOffset", 0)),
+            )
+            if args.dry_run:
+                _print_frame("STAGE_TRIGGER", frame)
+            else:
+                _print_response("STAGE_TRIGGER", device.last_response)
+            return 0
+
+        if args.command == "trigger" and args.trigger_command == "serial":
+            data = _load_json_object(args.file)
+            config = SerialTriggerConfig(
+                value_channel=int(data["valueChannel"]),
+                value_width=int(data["valueWidth"]),
+                value_data=int(data["valueData"]),
+                time_channel=int(data["timeChannel"]),
+                time_edge=int(data["timeEdge"]),
+                start_states=_states_from_json(data.get("startStates")),
+                stop_states=_states_from_json(data.get("stopStates")),
+                channel_offset=int(data.get("channelOffset", 0)),
+                enabled=data.get("enabled"),
+            )
+            frame = device.configure_serial_trigger(config)
+            if args.dry_run:
+                _print_frame("SERIAL_TRIGGER", frame)
+            else:
+                _print_response("SERIAL_TRIGGER", device.last_response)
             return 0
 
         if args.command == "capture" and args.capture_command == "configure":
