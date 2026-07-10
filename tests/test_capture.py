@@ -1,6 +1,13 @@
 import pytest
 
-from atkdl16_cli.capture import Dl16StreamParser, SamplingParameters, build_parameter_setting_payload
+from atkdl16_cli.capture import (
+    Dl16StreamParser,
+    SamplingParameters,
+    decode_channel_packet,
+    decode_rle_pairs,
+    iter_sample_bits,
+    build_parameter_setting_payload,
+)
 from atkdl16_cli.errors import ProtocolError
 
 
@@ -112,3 +119,34 @@ def test_packet_short_payload_exposes_missing_metadata_without_guessing():
     assert packet.metadata0 == 0x7F
     assert packet.metadata1 is None
     assert packet.body == b""
+
+
+def test_recovered_rle_decoder_expands_value_count_pairs():
+    assert decode_rle_pairs(bytes.fromhex("a5030002")) == bytes.fromhex("a5a5a50000")
+
+
+def test_recovered_rle_decoder_rejects_odd_input_and_original_buffer_overflow():
+    with pytest.raises(ProtocolError, match="value/count pairs"):
+        decode_rle_pairs(b"\xaa")
+    with pytest.raises(ProtocolError, match="524288"):
+        decode_rle_pairs(b"\xff\xff" * 2057)
+
+
+def test_sample_bits_are_chronological_lsb_first():
+    assert list(iter_sample_bits(bytes((0b10000001,)))) == [1, 0, 0, 0, 0, 0, 0, 1]
+
+
+def test_channel_packet_decoder_uses_metadata0_as_channel_and_expands_rle():
+    packet = Dl16StreamParser().feed(dl16_packet(1, b"\x03\x09\x81\x02"))[0]
+    block = decode_channel_packet(packet, is_rle=True)
+    assert block.channel == 3
+    assert block.metadata1 == 9
+    assert block.packed_samples == b"\x81\x81"
+    assert block.sample_count == 16
+    assert list(block.iter_samples())[:9] == [1, 0, 0, 0, 0, 0, 0, 1, 1]
+
+
+def test_channel_packet_decoder_rejects_non_data_packet():
+    packet = Dl16StreamParser().feed(dl16_packet(4, b"\x15\x00"))[0]
+    with pytest.raises(ProtocolError, match="type 1"):
+        decode_channel_packet(packet)

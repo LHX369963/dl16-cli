@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from collections.abc import Iterator
 
 from .errors import ProtocolError
 
@@ -9,6 +10,7 @@ _MAX_U40 = (1 << 40) - 1
 _DL16_START = 0x0A
 _DL16_TRAILER = b"\x00\x0b"
 _DL16_PACKET_TYPES = frozenset(range(1, 7))
+_DL16_RLE_PACKET_OUTPUT_LIMIT = 0x80000
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,55 @@ class Dl16StreamParser:
             packets.append(Dl16CapturePacket(packet_type=packet_type, payload=payload, raw=raw))
             del self._buffer[:total_length]
         return packets
+
+
+def decode_rle_pairs(data: bytes, *, output_limit: int = _DL16_RLE_PACKET_OUTPUT_LIMIT) -> bytes:
+    """Expand the original application's `(packed_value, repeat_count)` byte pairs."""
+
+    if len(data) % 2:
+        raise ProtocolError("DL16 RLE body must contain complete value/count pairs")
+    output = bytearray()
+    for offset in range(0, len(data), 2):
+        value, count = data[offset : offset + 2]
+        if len(output) + count > output_limit:
+            raise ProtocolError(f"DL16 RLE output exceeds original {output_limit}-byte packet buffer")
+        output.extend(bytes((value,)) * count)
+    return bytes(output)
+
+
+def iter_sample_bits(packed_samples: bytes) -> Iterator[int]:
+    """Yield chronological logic levels; the original GetSample reads each byte LSB first."""
+
+    for value in packed_samples:
+        for bit in range(8):
+            yield (value >> bit) & 1
+
+
+@dataclass(frozen=True)
+class Dl16ChannelSampleBlock:
+    channel: int
+    metadata1: int | None
+    packed_samples: bytes
+
+    @property
+    def sample_count(self) -> int:
+        return len(self.packed_samples) * 8
+
+    def iter_samples(self) -> Iterator[int]:
+        return iter_sample_bits(self.packed_samples)
+
+
+def decode_channel_packet(packet: Dl16CapturePacket, *, is_rle: bool = False) -> Dl16ChannelSampleBlock:
+    if packet.packet_type != 1:
+        raise ProtocolError(f"channel sample packet must have type 1, got {packet.packet_type}")
+    if packet.metadata0 is None:
+        raise ProtocolError("channel sample packet is missing metadata0 channel byte")
+    packed_samples = decode_rle_pairs(packet.body) if is_rle else packet.body
+    return Dl16ChannelSampleBlock(
+        channel=packet.metadata0,
+        metadata1=packet.metadata1,
+        packed_samples=packed_samples,
+    )
 
 
 @dataclass(frozen=True)
