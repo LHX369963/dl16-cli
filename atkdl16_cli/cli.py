@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from collections.abc import Sequence
 
-from .capture import SamplingParameters
+from .capture import Dl16CapturePacket, Dl16StreamParser, SamplingParameters
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
@@ -55,6 +55,12 @@ def _build_parser() -> argparse.ArgumentParser:
     configure.add_argument("--rle", action="store_true", help="enable hardware RLE flag")
     configure.add_argument("--buffer", action="store_true", help="enable buffer mode flag")
     configure.add_argument("--collect-type", type=int, default=1, help="original collectType value")
+    parse_capture = capture_sub.add_parser("parse", help="parse a saved raw DL16 receive stream")
+    parse_capture.add_argument("--input", required=True, help="input file containing concatenated wire packets")
+    read_capture = capture_sub.add_parser("read", help="read and losslessly save DL16 packets from USB")
+    read_capture.add_argument("--packets", type=int, required=True, help="number of complete packets to read")
+    read_capture.add_argument("--output", required=True, help="output file for concatenated raw wire packets")
+    read_capture.add_argument("--read-size", type=int, default=None, help="optional USB bulk-IN read size")
 
     trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
     trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
@@ -125,14 +131,71 @@ def _states_from_json(values: object):
     return parse_trigger_states(",".join(str(item) for item in values))
 
 
+def _packet_summary(index: int, packet: Dl16CapturePacket) -> dict[str, int | None]:
+    return {
+        "index": index,
+        "type": packet.packet_type,
+        "payload_length": len(packet.payload),
+        "metadata0": packet.metadata0,
+        "metadata1": packet.metadata1,
+        "body_length": len(packet.body),
+    }
+
+
+def _print_packet_summary(index: int, packet: Dl16CapturePacket) -> None:
+    print(json.dumps(_packet_summary(index, packet), sort_keys=True))
+
+
+def _parse_capture_file(path: str) -> list[Dl16CapturePacket]:
+    try:
+        data = Path(path).read_bytes()
+    except OSError as exc:
+        raise AtkDl16Error(f"cannot read capture file {path!r}: {exc}") from exc
+    return Dl16StreamParser().feed(data)
+
+
+def _read_capture_packets(
+    backend: UsbBackend, *, packet_count: int, output: str, read_size: int | None
+) -> list[Dl16CapturePacket]:
+    if packet_count <= 0:
+        raise AtkDl16Error(f"packets must be positive, got {packet_count}")
+    if read_size is not None and read_size <= 0:
+        raise AtkDl16Error(f"read-size must be positive, got {read_size}")
+    parser = Dl16StreamParser()
+    packets: list[Dl16CapturePacket] = []
+    try:
+        stream = Path(output).open("wb")
+    except OSError as exc:
+        raise AtkDl16Error(f"cannot open capture output {output!r}: {exc}") from exc
+    with stream:
+        while len(packets) < packet_count:
+            chunk = backend.read_chunk(size=read_size)
+            if not chunk:
+                raise AtkDl16Error(
+                    f"USB receive stream ended before {packet_count} packet(s); got {len(packets)}"
+                )
+            decoded = parser.feed(chunk)
+            remaining = packet_count - len(packets)
+            for packet in decoded[:remaining]:
+                stream.write(packet.raw)
+                packets.append(packet)
+    return packets
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
-    vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
-    backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
-    device = AtkDevice(backend)
 
     try:
+        if args.command == "capture" and args.capture_command == "parse":
+            for index, packet in enumerate(_parse_capture_file(args.input)):
+                _print_packet_summary(index, packet)
+            return 0
+
+        vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
+        backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
+        device = AtkDevice(backend)
+
         if args.command == "list":
             for info in backend.list_devices():
                 print(f"{info.usb_id} path={info.path} speed={info.speed}")
@@ -244,6 +307,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_frame("PARAMETER_SETTING", frame)
             else:
                 _print_response("PARAMETER_SETTING", device.last_response)
+            return 0
+
+        if args.command == "capture" and args.capture_command == "read":
+            packets = _read_capture_packets(
+                backend,
+                packet_count=args.packets,
+                output=args.output,
+                read_size=args.read_size,
+            )
+            for index, packet in enumerate(packets):
+                _print_packet_summary(index, packet)
             return 0
 
         if args.command == "raw":

@@ -47,6 +47,7 @@ class CliFakeBackend:
     def __init__(self):
         self.sent_frames = []
         self.devices = []
+        self.read_chunks = []
         CliFakeBackend.instances.append(self)
 
     def list_devices(self):
@@ -55,6 +56,10 @@ class CliFakeBackend:
     def send_frame(self, frame: bytes):
         self.sent_frames.append(frame)
         return b"\x99"
+
+    def read_chunk(self, size=None, timeout_ms=None):
+        del size, timeout_ms
+        return self.read_chunks.pop(0) if self.read_chunks else b""
 
 
 def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
@@ -183,3 +188,55 @@ def test_cli_trigger_serial_json_dry_run(tmp_path, capsys):
     assert rc == 0
     assert "SERIAL_TRIGGER" in out
     assert "140b03083412040100140020" in out
+
+
+def _capture_packet(packet_type, payload):
+    return bytes((0x0A, packet_type)) + len(payload).to_bytes(2, "little") + payload + b"\x00\x0b"
+
+
+def test_cli_capture_parse_prints_json_lines_for_saved_wire_stream(tmp_path, capsys):
+    path = tmp_path / "capture.bin"
+    path.write_bytes(
+        _capture_packet(1, b"\x12\x34\xaa\xbb")
+        + _capture_packet(6, b"\x01\x00")
+    )
+    rc = main(["capture", "parse", "--input", str(path)])
+    lines = capsys.readouterr().out.splitlines()
+    assert rc == 0
+    assert len(lines) == 2
+    assert '"type": 1' in lines[0]
+    assert '"metadata0": 18' in lines[0]
+    assert '"body_length": 2' in lines[0]
+    assert '"type": 6' in lines[1]
+
+
+def test_cli_capture_read_writes_lossless_packets_from_fragmented_usb_chunks(
+    monkeypatch, tmp_path, capsys
+):
+    import atkdl16_cli.cli as cli
+
+    first = _capture_packet(1, b"\x01\x00abc")
+    second = _capture_packet(5, b"\x02\x00done")
+    backend = CliFakeBackend()
+    backend.read_chunks = [first[:5], first[5:] + second]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    output = tmp_path / "wire.bin"
+    rc = cli.main(["capture", "read", "--packets", "2", "--output", str(output)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert output.read_bytes() == first + second
+    assert '"type": 1' in out
+    assert '"type": 5' in out
+
+
+def test_cli_capture_read_reports_end_of_stream_before_requested_count(
+    monkeypatch, tmp_path, capsys
+):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    rc = cli.main(["capture", "read", "--packets", "1", "--output", str(tmp_path / "x.bin")])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "before 1 packet" in err
