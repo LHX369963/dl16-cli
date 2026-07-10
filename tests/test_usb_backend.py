@@ -175,3 +175,37 @@ def test_pyusb_backend_send_frame_writes_and_reads_response():
     assert out_ep.writes == [(b"abc", 250)]
     assert in_ep.reads == [(512, 250)]
     assert response == b"\x12\x34"
+
+
+def test_pyusb_backend_read_chunk_opens_and_reads_bulk_in_without_writing():
+    from atkdl16_cli.usb import PyUsbBackend
+
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=b"capture")
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(
+        device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil, timeout_ms=250
+    )
+    assert backend.read_chunk() == b"capture"
+    assert in_ep.reads == [(512, 250)]
+    assert out_ep.writes == []
+
+
+def test_pyusb_backend_read_chunk_allows_size_and_timeout_override():
+    from atkdl16_cli.usb import PyUsbBackend
+
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=b"abc")
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
+    assert backend.read_chunk(size=4096, timeout_ms=900) == b"abc"
+    assert in_ep.reads == [(4096, 900)]
+
+
+def test_dry_run_backend_returns_queued_read_chunks():
+    from atkdl16_cli.usb import DryRunBackend
+
+    backend = DryRunBackend(read_chunks=[b"one", b"two"])
+    assert backend.read_chunk() == b"one"
+    assert backend.read_chunk() == b"two"
+    assert backend.read_chunk() == b""

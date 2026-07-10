@@ -50,10 +50,18 @@ class UsbBackend(Protocol):
     def send_frame(self, frame: bytes) -> bytes:
         raise NotImplementedError
 
+    def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
+        raise NotImplementedError
+
 
 class DryRunBackend:
-    def __init__(self, devices: list[DeviceInfo] | None = None) -> None:
+    def __init__(
+        self,
+        devices: list[DeviceInfo] | None = None,
+        read_chunks: list[bytes] | None = None,
+    ) -> None:
         self._devices = list(devices or [])
+        self._read_chunks = [bytes(chunk) for chunk in (read_chunks or [])]
         self.sent_frames: list[bytes] = []
 
     def list_devices(self) -> list[DeviceInfo]:
@@ -62,6 +70,10 @@ class DryRunBackend:
     def send_frame(self, frame: bytes) -> bytes:
         self.sent_frames.append(bytes(frame))
         return b""
+
+    def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
+        del size, timeout_ms
+        return self._read_chunks.pop(0) if self._read_chunks else b""
 
 
 class PyUsbBackend:
@@ -142,6 +154,21 @@ class PyUsbBackend:
         packet_size = int(getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64)
         data = self.read_endpoint.read(packet_size, timeout=self.timeout_ms)
         return bytes(data)
+
+    def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
+        if self.read_endpoint is None:
+            self.open()
+        if self.read_endpoint is None:
+            raise UsbBackendError("could not find USB IN endpoint")
+        read_size = size
+        if read_size is None:
+            read_size = int(getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64)
+        if not isinstance(read_size, int) or read_size <= 0:
+            raise ProtocolError(f"USB read size must be a positive integer, got {read_size!r}")
+        timeout = self.timeout_ms if timeout_ms is None else timeout_ms
+        if not isinstance(timeout, int) or timeout <= 0:
+            raise ProtocolError(f"USB timeout must be a positive integer, got {timeout!r}")
+        return bytes(self.read_endpoint.read(read_size, timeout=timeout))
 
     def _find_device(self) -> Any | None:
         candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]
