@@ -211,11 +211,23 @@ Recovered packet-type behavior:
 | Type | Original receive-thread behavior |
 |---:|---|
 | 1 | Packed per-channel sample data |
-| 2 | Accepted; exact semantic role still unknown |
+| 2 | Device-information response; format byte and selected fields recovered |
 | 3 | Reads a 5-byte little-endian value and logs an offset command |
 | 4 | Control/status body; observed subcommands include `0x15` end and `0x12` status/error |
 | 5 | Reads a 5-byte little-endian value and updates receive progress |
 | 6 | End/state transition path |
+
+For a type-2 body whose byte 0 is `1`, the connection code reads:
+
+```text
+body[0]       format discriminator, required value 1
+body[1..2]    reserved/unused by the observed parser
+body[3]*100 + body[4]   first decimal-coded numeric value
+body[5]*100 + body[6]   second decimal-coded numeric value
+body[7..N]    NUL-terminated local-text device string
+```
+
+The CLI intentionally labels the numeric fields `value_3_4` and `value_5_6` until their exact product/version names can be confirmed from hardware output.
 
 Raw capture and inspection:
 

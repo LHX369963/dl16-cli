@@ -277,6 +277,8 @@ The type jump table in `ThreadWork::DeviceRecvThread` is at `0x1f2c8e0`:
 | 5 | `0x103c44` | copies five bytes and computes receive percentage |
 | 6 | `0x102e22` | end/state transition path |
 
+Type-2 device information is parsed in `ConnectDevice::CheckDeviceCreanInfo` at `0xf6d30..0xf6e4a`. It requires body byte 0 equal to 1, calculates `body[3] * 100 + body[4]` and `body[5] * 100 + body[6]`, and converts bytes from body offset 7 through the first NUL to a local-text string. Body bytes 1..2 are skipped by this observed path.
+
 ## Recovered sample and RLE representation
 
 Evidence source: type-1 receive path `0x102fd3..0x1033b8`.

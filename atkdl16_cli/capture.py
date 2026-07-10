@@ -131,7 +131,18 @@ def interpret_capture_packet(packet: Dl16CapturePacket) -> dict[str, object]:
         "metadata0": packet.metadata0,
         "metadata1": packet.metadata1,
     }
-    if packet.packet_type in (3, 5) and len(packet.body) >= 5:
+    if packet.packet_type == 2 and len(packet.body) >= 7 and packet.body[0] == 1:
+        text_bytes = packet.body[7:].split(b"\x00", 1)[0]
+        result.update(
+            {
+                "device_info_format": 1,
+                "value_3_4": packet.body[3] * 100 + packet.body[4],
+                "value_5_6": packet.body[5] * 100 + packet.body[6],
+                "device_text": text_bytes.decode("utf-8", errors="replace"),
+                "reserved_1_2_hex": packet.body[1:3].hex(),
+            }
+        )
+    elif packet.packet_type in (3, 5) and len(packet.body) >= 5:
         result["value_u40"] = int.from_bytes(packet.body[:5], "little")
         if len(packet.body) > 5:
             result["extra_hex"] = packet.body[5:].hex()

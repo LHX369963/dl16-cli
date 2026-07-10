@@ -186,3 +186,18 @@ def test_unknown_or_short_control_fields_remain_absent():
         "metadata1": None,
         "body_hex": "",
     }
+
+
+def test_type2_device_info_exposes_recovered_numeric_fields_and_nul_terminated_text():
+    body = bytes((1, 0xAA, 0xBB, 2, 34, 5, 67)) + b"DL16-A\x00ignored"
+    packet = Dl16StreamParser().feed(dl16_packet(2, b"\x00\x00" + body))[0]
+    assert interpret_capture_packet(packet) == {
+        "type": 2,
+        "metadata0": 0,
+        "metadata1": 0,
+        "device_info_format": 1,
+        "value_3_4": 234,
+        "value_5_6": 567,
+        "device_text": "DL16-A",
+        "reserved_1_2_hex": "aabb",
+    }
