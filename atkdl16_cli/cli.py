@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from collections.abc import Sequence
 
-from .capture import Dl16CapturePacket, Dl16StreamParser, SamplingParameters
+from .capture import Dl16CapturePacket, Dl16StreamParser, SamplingParameters, decode_channel_packet
 from .device import AtkDevice
 from .errors import AtkDl16Error
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
@@ -61,6 +61,10 @@ def _build_parser() -> argparse.ArgumentParser:
     read_capture.add_argument("--packets", type=int, required=True, help="number of complete packets to read")
     read_capture.add_argument("--output", required=True, help="output file for concatenated raw wire packets")
     read_capture.add_argument("--read-size", type=int, default=None, help="optional USB bulk-IN read size")
+    decode_capture = capture_sub.add_parser("decode", help="decode type-1 packets into per-channel packed samples")
+    decode_capture.add_argument("--input", required=True)
+    decode_capture.add_argument("--output-dir", required=True)
+    decode_capture.add_argument("--rle", action="store_true", help="expand recovered value/count RLE pairs")
 
     trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
     trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
@@ -182,15 +186,51 @@ def _read_capture_packets(
     return packets
 
 
+def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> dict:
+    channel_data: dict[int, bytearray] = {}
+    metadata: dict[int, list[int | None]] = {}
+    for packet in _parse_capture_file(input_path):
+        if packet.packet_type != 1:
+            continue
+        block = decode_channel_packet(packet, is_rle=is_rle)
+        channel_data.setdefault(block.channel, bytearray()).extend(block.packed_samples)
+        metadata.setdefault(block.channel, []).append(block.metadata1)
+    if not channel_data:
+        raise AtkDl16Error("capture contains no type-1 channel sample packets")
+    destination = Path(output_dir)
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+        channels = {}
+        for channel in sorted(channel_data):
+            filename = f"channel-{channel:02d}.bin"
+            packed = bytes(channel_data[channel])
+            (destination / filename).write_bytes(packed)
+            channels[str(channel)] = {
+                "file": filename,
+                "packed_bytes": len(packed),
+                "samples": len(packed) * 8,
+                "metadata1": metadata[channel],
+            }
+        manifest = {"bit_order": "lsb-first", "rle": is_rle, "channels": channels}
+        (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    except OSError as exc:
+        raise AtkDl16Error(f"cannot write decoded capture to {output_dir!r}: {exc}") from exc
+    return manifest
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
     try:
-        if args.command == "capture" and args.capture_command == "parse":
-            for index, packet in enumerate(_parse_capture_file(args.input)):
-                _print_packet_summary(index, packet)
-            return 0
+        if args.command == "capture":
+            if args.capture_command == "parse":
+                for index, packet in enumerate(_parse_capture_file(args.input)):
+                    _print_packet_summary(index, packet)
+                return 0
+            if args.capture_command == "decode":
+                print(json.dumps(_decode_capture_file(args.input, args.output_dir, is_rle=args.rle), sort_keys=True))
+                return 0
 
         vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
         backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)

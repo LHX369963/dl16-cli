@@ -36,8 +36,12 @@ The original binary function is named `gCRC32`. The prototype uses standard CRC3
 | Command | Value | Implemented behavior |
 |---|---:|---|
 | `GET_DEVICE_DATA` | `0x10` | Dry-run frame generation |
-| `STOP` | `0x15` | Dry-run frame generation with optional one-byte channel payload |
-| `PWM` | `0x17` | Dry-run frame generation for start and stop payloads |
+| `PARAMETER_SETTING` | `0x11` | High-level 13-byte sampling configuration |
+| `SIMPLE_TRIGGER` | `0x12` | High-level and raw payload generation |
+| `STAGE_TRIGGER` | `0x13` | High-level and raw payload generation |
+| `SERIAL_TRIGGER` | `0x14` | High-level and raw payload generation |
+| `STOP` | `0x15` | Optional one-byte channel payload |
+| `PWM` | `0x17` | Start and stop payloads |
 
 ## PWM start payload
 
@@ -58,10 +62,6 @@ duty_count = int(period_count * duty_percent / 100)
 byte 0: (channel + 1) << 4
 ```
 
-## Commands not implemented in the first plan
-
-Capture, trigger, and firmware commands remain documented in `docs/protocol/evidence-summary.md` and are intentionally not exposed as sending commands by the dry-run CLI.
-
 ## Hardware USB backend stage
 
 Install the optional pyusb dependency before using non-dry-run hardware commands:
@@ -70,17 +70,22 @@ Install the optional pyusb dependency before using non-dry-run hardware commands
 python3 -m pip install -e '.[usb]'
 ```
 
-The hardware backend currently supports only the low-risk commands that already have tested frame builders:
+The hardware backend exposes the tested command builders plus independent bulk-IN capture reads:
 
 - `atkdl16 list`
 - `atkdl16 info`
 - `atkdl16 stop [--channel N]`
 - `atkdl16 pwm start --channel N --freq HZ --duty PERCENT`
 - `atkdl16 pwm stop --channel N`
+- `atkdl16 capture configure ...`
+- `atkdl16 trigger simple ...`
+- `atkdl16 trigger stage --file ...`
+- `atkdl16 trigger serial --file ...`
+- `atkdl16 capture read --packets N --output wire.bin`
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
-Capture, simple trigger, stage trigger, serial trigger, and firmware update remain unavailable in the CLI until their payloads and response formats are fully recovered and separately tested. Firmware flashing is intentionally disabled in this stage.
+Firmware flashing remains intentionally disabled until its separate MCU framing, acknowledgements, and recovery procedure are fully decoded.
 
 ## Raw recovered command CLI
 
@@ -173,3 +178,62 @@ enabled[]
 startStates[]
 stopStates[]
 ```
+
+## DL16 receive packet framing
+
+`Analysis::analysis_get_type`, `analysis_get_length`, `analysis_get_data`, and `getNextData` establish this incremental wire format:
+
+```text
+0       0x0a
+1       packet type, accepted range 1..6
+2..3    payload length, uint16 little-endian
+4..     payload
+4+N     0x00
+5+N     0x0b
+```
+
+The total packet length is `N + 6`. USB transfer boundaries do not need to match these packet boundaries.
+
+Within the payload, byte 0 is metadata used as the channel ID on type-1 packets. Payload byte 1 is preserved as `metadata1`, but its meaning is not yet assigned. The packet body begins at payload offset 2.
+
+Recovered packet-type behavior:
+
+| Type | Original receive-thread behavior |
+|---:|---|
+| 1 | Packed per-channel sample data |
+| 2 | Accepted; exact semantic role still unknown |
+| 3 | Reads a 5-byte little-endian value and logs an offset command |
+| 4 | Control/status body; observed subcommands include `0x15` end and `0x12` status/error |
+| 5 | Reads a 5-byte little-endian value and updates receive progress |
+| 6 | End/state transition path |
+
+Raw capture and inspection:
+
+```bash
+atkdl16 capture read --packets 100 --output wire.bin
+atkdl16 capture parse --input wire.bin
+```
+
+`capture read` saves complete concatenated wire packets without altering them.
+
+## Packed samples and hardware RLE
+
+For type-1 packets, the body is a sequence of packed sample bytes. Each byte contains eight chronological samples, least-significant bit first.
+
+When `isRLE` is enabled, the body is instead a sequence of two-byte records:
+
+```text
+byte 0: packed sample value
+byte 1: repeat count
+```
+
+The original receiver expands each packed value `repeat count` times into a 512 KiB packet buffer. The implementation enforces the same per-packet output limit.
+
+Decode a saved stream into one packed file per channel:
+
+```bash
+atkdl16 capture decode --input wire.bin --output-dir decoded
+atkdl16 capture decode --input wire-rle.bin --output-dir decoded-rle --rle
+```
+
+The output directory contains `channel-NN.bin` files and `manifest.json`. Packed files retain the LSB-first eight-samples-per-byte representation.

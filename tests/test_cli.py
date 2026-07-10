@@ -240,3 +240,24 @@ def test_cli_capture_read_reports_end_of_stream_before_requested_count(
     err = capsys.readouterr().err
     assert rc == 1
     assert "before 1 packet" in err
+
+
+def test_cli_capture_decode_exports_per_channel_packed_samples_and_manifest(tmp_path):
+    source = tmp_path / "wire.bin"
+    source.write_bytes(
+        _capture_packet(1, b"\x03\x01\x81\x02")
+        + _capture_packet(1, b"\x03\x02\x00\x01")
+        + _capture_packet(4, b"\x15\x00")
+    )
+    output = tmp_path / "decoded"
+    rc = main([
+        "capture", "decode", "--input", str(source), "--output-dir", str(output), "--rle"
+    ])
+    assert rc == 0
+    assert (output / "channel-03.bin").read_bytes() == b"\x81\x81\x00"
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["bit_order"] == "lsb-first"
+    assert manifest["rle"] is True
+    assert manifest["channels"]["3"]["packed_bytes"] == 3
+    assert manifest["channels"]["3"]["samples"] == 24
+    assert manifest["channels"]["3"]["metadata1"] == [1, 2]

@@ -1,6 +1,6 @@
 # ATK-Logic / DL16 reverse-engineering evidence summary
 
-Date: 2026-07-09
+Date: 2026-07-10
 Source package: `ATK-Logic_1.1.2.0_amd64.deb`
 Main binary: `extracted/opt/apps/atk-logic/ATK-Logic`
 
@@ -255,3 +255,37 @@ packed stopCondition bytes
 ```
 
 Relevant appends/conversions: `0xc43c6`, `0xc4407`, `0xc4451`, `0xc44bb`, `0xc44fc`, and condition pack calls `0xc45d5`, `0xc46e6`.
+
+## Recovered DL16 receive packet framing
+
+Evidence source: `Analysis::*` at `0x57bc0..0x57f30`, captured in `reverse/capture/57bc0_Analysis_DL16.s`.
+
+- `analysis_get_type` requires byte 0 `0x0a` and accepts type byte 1 only in range 1..6.
+- `analysis_get_length` reads bytes 2..3 as a little-endian uint16.
+- `analysis_get_data` requires exactly that payload length, followed by `0x00 0x0b`.
+- Total encoded size is `payload_length + 6`.
+- `getNextData` copies payload byte 0 to its metadata field, returns a data pointer at payload + 2, and reports body length `payload_length - 2`.
+
+The type jump table in `ThreadWork::DeviceRecvThread` is at `0x1f2c8e0`:
+
+| Type | Destination | Observed behavior |
+|---:|---:|---|
+| 1 | `0x102fd3` | channel sample path |
+| 2 | `0x103dac` | shared/default parser loop |
+| 3 | `0x1033bd` | copies five body bytes into a uint64 and logs an offset command |
+| 4 | `0x102f23` | control/status body; checks body byte 0 for `0x15` and `0x12` |
+| 5 | `0x103c44` | copies five bytes and computes receive percentage |
+| 6 | `0x102e22` | end/state transition path |
+
+## Recovered sample and RLE representation
+
+Evidence source: type-1 receive path `0x102fd3..0x1033b8`.
+
+- Payload metadata byte 0 is passed as the channel argument to `Segment::SetSampleBlock`.
+- With `isRLE == false`, the body is passed directly and its byte length is accumulated per channel.
+- With `isRLE == true`, `0x103223..0x1032f1` requires an even body length and expands repeated `(value, count)` byte pairs into a `0x80000`-byte temporary buffer.
+- The expanded or direct bytes are then handled identically.
+
+`Segment::GetSample` at `0xd7f80` computes `sample_index >> 3`, loads the packed byte, shifts it right by `sample_index & 7`, and masks bit 0. Therefore each packed byte contains eight chronological samples in LSB-first order.
+
+`Segment::CheckCompress` is not the USB hardware RLE decoder. It checks 64-bit words for all-zero or all-one blocks and is used by internal `Segment` storage compression.
