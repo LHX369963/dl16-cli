@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from pathlib import Path
 from collections.abc import Sequence
 
@@ -26,7 +27,7 @@ from .firmware import (
     flash_firmware,
 )
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
-from .trigger import SerialTriggerConfig, StageCondition, parse_trigger_states
+from .trigger import SerialTriggerConfig, StageCondition, TriggerState, parse_trigger_states
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
 
@@ -81,6 +82,17 @@ def _build_parser() -> argparse.ArgumentParser:
     decode_capture.add_argument("--input", required=True)
     decode_capture.add_argument("--output-dir", required=True)
     decode_capture.add_argument("--rle", action="store_true", help="expand recovered value/count RLE pairs")
+    run_capture = capture_sub.add_parser(
+        "run", help="initialize, configure, trigger, acquire and decode in one process"
+    )
+    run_capture.add_argument("--channel", type=int, required=True, help="single input channel, 0..15")
+    run_capture.add_argument("--set-time", type=float, required=True, help="capture time in milliseconds")
+    run_capture.add_argument("--set-hz", type=int, required=True, help="sampling frequency in Hz")
+    run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
+    run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
+    run_capture.add_argument("--sample-index", type=int, required=True, help="original sampling-rate index")
+    run_capture.add_argument("--output-dir", required=True)
+    run_capture.add_argument("--read-size", type=int, default=16384)
 
     trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
     trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
@@ -254,6 +266,92 @@ def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> d
     return manifest
 
 
+def _run_single_channel_capture(
+    device: AtkDevice,
+    backend: UsbBackend,
+    params: SamplingParameters,
+    *,
+    channel: int,
+    output_dir: str,
+    read_size: int,
+) -> dict:
+    if not 0 <= channel <= 15:
+        raise AtkDl16Error(f"channel must be in range 0..15, got {channel}")
+    if read_size <= 0 or read_size % 2048:
+        raise AtkDl16Error("capture run read-size must be a positive multiple of 2048")
+
+    depth = int(params.set_time * (params.set_hz // 1_000))
+    expected_bytes = (depth + 7) // 8
+    if expected_bytes == 0:
+        raise AtkDl16Error("capture depth must contain at least one sample")
+
+    destination = Path(output_dir)
+    try:
+        destination.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise AtkDl16Error(f"cannot create capture output {output_dir!r}: {exc}") from exc
+
+    device.initialize_connection()
+    states = [TriggerState.NULL] * 16
+    enabled = [False] * 16
+    enabled[channel] = True
+    parser = Dl16StreamParser()
+    packets: list[Dl16CapturePacket] = []
+    packed = bytearray()
+    target_wire_bytes = expected_bytes + 12
+    capture_started = False
+    try:
+        device.configure_sampling_no_response(params)
+        time.sleep(0.06)
+        device.configure_simple_trigger_no_response(
+            states, enabled=enabled, collect_type=params.collect_type
+        )
+        capture_started = True
+        while len(packed) < target_wire_bytes:
+            chunk = backend.read_chunk(size=read_size)
+            if not chunk:
+                raise AtkDl16Error(
+                    f"capture stream ended at {len(packed)} of {target_wire_bytes} wire sample bytes"
+                )
+            for packet in parser.feed(chunk):
+                packets.append(packet)
+                if packet.packet_type == 1 and packet.metadata0 == channel:
+                    packed.extend(packet.body)
+                    if len(packed) >= target_wire_bytes:
+                        break
+    finally:
+        if capture_started:
+            device.stop_no_response()
+
+    samples = bytes(packed[12 : 12 + expected_bytes])
+    if len(samples) != expected_bytes:
+        raise AtkDl16Error(
+            f"capture returned {len(samples)} of {expected_bytes} expected packed sample bytes"
+        )
+    manifest = {
+        "bit_order": "lsb-first",
+        "sample_rate_hz": params.set_hz,
+        "sample_depth": depth,
+        "transport_header_bytes_removed": 12,
+        "channels": {
+            str(channel): {
+                "file": f"channel-{channel:02d}.bin",
+                "packed_bytes": len(samples),
+                "samples": depth,
+            }
+        },
+    }
+    try:
+        (destination / "wire.bin").write_bytes(b"".join(packet.raw for packet in packets))
+        (destination / f"channel-{channel:02d}.bin").write_bytes(samples)
+        (destination / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+        )
+    except OSError as exc:
+        raise AtkDl16Error(f"cannot write capture output {output_dir!r}: {exc}") from exc
+    return manifest
+
+
 def _read_binary_file(path: str, label: str) -> bytes:
     try:
         return Path(path).read_bytes()
@@ -307,6 +405,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.capture_command == "decode":
                 print(json.dumps(_decode_capture_file(args.input, args.output_dir, is_rle=args.rle), sort_keys=True))
                 return 0
+            if args.capture_command == "run" and args.dry_run:
+                raise AtkDl16Error("capture run requires connected hardware; use capture configure for dry-run")
 
         if args.command == "firmware" and args.firmware_command == "plan":
             target = FirmwareTarget(args.target)
@@ -453,6 +553,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _print_frame("PARAMETER_SETTING", frame)
             else:
                 _print_response("PARAMETER_SETTING", device.last_response)
+            return 0
+
+        if args.command == "capture" and args.capture_command == "run":
+            params = SamplingParameters(
+                set_time=args.set_time,
+                set_hz=args.set_hz,
+                trigger_position_percent=args.trigger_position,
+                threshold_level=args.threshold,
+                sample_index=args.sample_index,
+                collect_type=1,
+            )
+            manifest = _run_single_channel_capture(
+                device,
+                backend,
+                params,
+                channel=args.channel,
+                output_dir=args.output_dir,
+                read_size=args.read_size,
+            )
+            print(json.dumps(manifest, sort_keys=True))
             return 0
 
         if args.command == "capture" and args.capture_command == "read":

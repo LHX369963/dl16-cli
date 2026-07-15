@@ -30,6 +30,12 @@ class AtkDevice:
         self.last_response = self.backend.send_frame(frame)
         return frame
 
+    def _write_command(self, command: Command, payload: bytes = b"") -> bytes:
+        frame = build_transport_frame(command, payload)
+        self.backend.write_frame(frame)
+        self.last_response = b""
+        return frame
+
     def get_device_data_frame(self) -> bytes:
         return build_transport_frame(Command.GET_DEVICE_DATA, b"")
 
@@ -97,6 +103,15 @@ class AtkDevice:
             payload = bytes((channel,))
         return self._send_command(Command.STOP, payload)
 
+    def stop_no_response(self, channel: int | None = None) -> bytes:
+        if channel is None:
+            payload = b""
+        else:
+            if not isinstance(channel, int) or not 0 <= channel <= 127:
+                raise ProtocolError(f"stop channel must be in range 0..127, got {channel!r}")
+            payload = bytes((channel,))
+        return self._write_command(Command.STOP, payload)
+
     def pwm_start(self, channel: int, frequency_hz: int, duty_percent: float) -> bytes:
         return self._send_command(Command.PWM, build_pwm_start_payload(channel, frequency_hz, duty_percent))
 
@@ -106,6 +121,9 @@ class AtkDevice:
 
     def configure_sampling(self, params: SamplingParameters) -> bytes:
         return self._send_command(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
+
+    def configure_sampling_no_response(self, params: SamplingParameters) -> bytes:
+        return self._write_command(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
 
     def parameter_setting_raw(self, payload: bytes) -> bytes:
         return self._send_command(Command.PARAMETER_SETTING, payload)
@@ -123,6 +141,19 @@ class AtkDevice:
             states, enabled=enabled, collect_type=collect_type, channel_offset=channel_offset
         )
         return self._send_command(Command.SIMPLE_TRIGGER, payload)
+
+    def configure_simple_trigger_no_response(
+        self,
+        states: list[TriggerState],
+        *,
+        enabled: list[bool] | None = None,
+        collect_type: int = 1,
+        channel_offset: int = 0,
+    ) -> bytes:
+        payload = build_simple_trigger_payload(
+            states, enabled=enabled, collect_type=collect_type, channel_offset=channel_offset
+        )
+        return self._write_command(Command.SIMPLE_TRIGGER, payload)
 
     def configure_stage_trigger(
         self,

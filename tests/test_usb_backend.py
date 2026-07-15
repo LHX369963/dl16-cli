@@ -218,6 +218,30 @@ def test_pyusb_backend_send_frame_pads_and_interleaves_ffcc_normal_command():
     assert response == logical_response
 
 
+def test_pyusb_backend_write_frame_uses_ffcc_transport_without_reading():
+    from atkdl16_cli.usb import PyUsbBackend, encode_ffcc_transport
+
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=b"unused")
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
+    frame = b"\x00" * 8 + b"\x0a\x11\x01\x0b"
+    assert backend.write_frame(frame) == 2048
+    assert out_ep.writes == [(encode_ffcc_transport(frame.ljust(2048, b"\x00")), 1000)]
+    assert in_ep.reads == []
+
+
+def test_pyusb_backend_read_chunk_decodes_large_ffcc_capture_transfer():
+    from atkdl16_cli.usb import PyUsbBackend, encode_ffcc_transport
+
+    logical = (b"\x0a\x06\x03\x00\xff\x00\x00\x00\x0b").ljust(16384, b"\x00")
+    out_ep = FakeIoEndpoint(0x02, 512)
+    in_ep = FakeIoEndpoint(0x81, 512, read_data=encode_ffcc_transport(logical))
+    dev = FakeDevice(0x1A86, 0xFFCC, configs=[FakeConfig([FakeInterface([out_ep, in_ep])])])
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
+    assert backend.read_chunk(size=16384) == logical
+
+
 def test_pyusb_backend_read_chunk_opens_and_reads_bulk_in_without_writing():
     from atkdl16_cli.usb import PyUsbBackend
 

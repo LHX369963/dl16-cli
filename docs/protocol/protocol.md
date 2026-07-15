@@ -101,6 +101,7 @@ The hardware backend exposes the tested command builders plus independent bulk-I
 - `atkdl16 trigger stage --file ...`
 - `atkdl16 trigger serial --file ...`
 - `atkdl16 capture read --packets N --output wire.bin`
+- `atkdl16 capture run ... --output-dir capture`
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
@@ -109,6 +110,28 @@ automatically recover the link without a physical hotplug: clear both bulk
 endpoints, issue a USB bus reset, immediately reclaim the interface, wait the
 original application's 400 ms settle interval, retry the MCU query up to six
 times, query both FPGA banks, and validate the `DL16` information response.
+
+`capture run` keeps recovery, configuration, trigger, bulk reads, stop, and
+decode in one process, so no command boundary resets the configured capture. A
+single-channel 1 MHz/500 ms acquisition matching the confirmed CH7 trace is:
+
+```bash
+atkdl16 --timeout-ms 2000 capture run \
+  --channel 7 \
+  --set-time 500 \
+  --set-hz 1000000 \
+  --trigger-position 1 \
+  --threshold 1.6 \
+  --sample-index 1 \
+  --output-dir capture
+```
+
+The output directory contains the logical packet stream (`wire.bin`), packed
+LSB-first samples (`channel-07.bin`), and `manifest.json`. The implementation
+removes the confirmed 12-byte first-channel transport prefix and stops after
+the requested sample depth. This command currently supports one input channel
+per invocation while the multi-channel prefix/offset behavior is still being
+recovered.
 
 Firmware frame planning is available offline. Hardware flashing is exposed only behind the explicit `--i-understand-this-can-brick` guard and should be used only after entering the bootloader and confirming the correct transport mode.
 

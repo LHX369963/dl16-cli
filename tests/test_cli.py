@@ -61,6 +61,10 @@ class CliFakeBackend:
         del size, timeout_ms
         return self.read_chunks.pop(0) if self.read_chunks else b""
 
+    def write_frame(self, frame: bytes):
+        self.sent_frames.append(bytes(frame))
+        return len(frame)
+
 
 def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
     import atkdl16_cli.cli as cli
@@ -264,6 +268,45 @@ def test_cli_capture_decode_exports_per_channel_packed_samples_and_manifest(tmp_
     assert manifest["channels"]["3"]["packed_bytes"] == 3
     assert manifest["channels"]["3"]["samples"] == 24
     assert manifest["channels"]["3"]["metadata1"] == [1, 2]
+
+
+def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_header(
+    monkeypatch, tmp_path, capsys
+):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    sample_data = b"\xaa" * 12 + b"\x55" * 125
+    backend.read_chunks = [
+        _capture_packet(4, b"\xff\x00\x12\x03")
+        + _capture_packet(1, b"\x07\x00" + sample_data)
+    ]
+    initialized = []
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(
+        cli.AtkDevice,
+        "initialize_connection",
+        lambda self: initialized.append(True) or b"DL16",
+    )
+    output = tmp_path / "capture"
+    rc = cli.main([
+        "capture", "run", "--channel", "7", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "1",
+        "--threshold", "1.6", "--sample-index", "1",
+        "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert initialized == [True]
+    assert len(backend.sent_frames) == 3
+    assert backend.sent_frames[0][9:11] == b"\x11\x0e"
+    assert backend.sent_frames[1][9:11] == b"\x12\x0b"
+    assert backend.sent_frames[1][11:21] == bytes.fromhex("0000000f000000000000")
+    assert backend.sent_frames[2][9:11] == b"\x15\x01"
+    assert (output / "channel-07.bin").read_bytes() == b"\x55" * 125
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["channels"]["7"]["samples"] == 1000
+    assert manifest["transport_header_bytes_removed"] == 12
+    assert '"samples": 1000' in capsys.readouterr().out
 
 
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):

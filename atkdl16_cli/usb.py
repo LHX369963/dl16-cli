@@ -94,6 +94,9 @@ class UsbBackend(Protocol):
     def send_frame(self, frame: bytes) -> bytes:
         raise NotImplementedError
 
+    def write_frame(self, frame: bytes) -> int:
+        raise NotImplementedError
+
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         raise NotImplementedError
 
@@ -118,6 +121,11 @@ class DryRunBackend:
     def send_frame(self, frame: bytes) -> bytes:
         self.sent_frames.append(bytes(frame))
         return b""
+
+    def write_frame(self, frame: bytes) -> int:
+        frame = bytes(frame)
+        self.sent_frames.append(frame)
+        return len(frame)
 
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         del size, timeout_ms
@@ -243,20 +251,8 @@ class PyUsbBackend:
     def send_frame(self, frame: bytes) -> bytes:
         if self.write_endpoint is None or self.read_endpoint is None:
             self.open()
-        frame = bytes(frame)
-        padded_size = (
-            (len(frame) + NORMAL_COMMAND_TRANSFER_SIZE - 1)
-            // NORMAL_COMMAND_TRANSFER_SIZE
-            * NORMAL_COMMAND_TRANSFER_SIZE
-        )
-        transfer = frame.ljust(padded_size, b"\x00")
-        uses_ffcc_transport = (
-            int(getattr(self.device, "idVendor", 0)) == 0x1A86
-            and int(getattr(self.device, "idProduct", 0)) == 0xFFCC
-        )
-        if uses_ffcc_transport:
-            transfer = encode_ffcc_transport(transfer)
-        self.write_chunk(transfer)
+        uses_ffcc_transport = self._uses_ffcc_transport()
+        self.write_frame(frame)
         if self.read_endpoint is None:
             return b""
         read_size = NORMAL_COMMAND_TRANSFER_SIZE if uses_ffcc_transport else int(
@@ -264,6 +260,22 @@ class PyUsbBackend:
         )
         data = bytes(self.read_endpoint.read(read_size, timeout=self.timeout_ms))
         return decode_ffcc_transport(data) if uses_ffcc_transport else data
+
+    def write_frame(self, frame: bytes) -> int:
+        """Write one normal command without consuming capture/ack data from bulk IN."""
+
+        if self.write_endpoint is None:
+            self.open()
+        frame = bytes(frame)
+        padded_size = (
+            (len(frame) + NORMAL_COMMAND_TRANSFER_SIZE - 1)
+            // NORMAL_COMMAND_TRANSFER_SIZE
+            * NORMAL_COMMAND_TRANSFER_SIZE
+        )
+        transfer = frame.ljust(padded_size, b"\x00")
+        if self._uses_ffcc_transport():
+            transfer = encode_ffcc_transport(transfer)
+        return self.write_chunk(transfer)
 
     def write_chunk(self, data: bytes, timeout_ms: int | None = None) -> int:
         if self.write_endpoint is None:
@@ -292,9 +304,22 @@ class PyUsbBackend:
         if not isinstance(timeout, int) or timeout <= 0:
             raise ProtocolError(f"USB timeout must be a positive integer, got {timeout!r}")
         try:
-            return bytes(self.read_endpoint.read(read_size, timeout=timeout))
+            data = bytes(self.read_endpoint.read(read_size, timeout=timeout))
+            if (
+                self._uses_ffcc_transport()
+                and len(data) >= NORMAL_COMMAND_TRANSFER_SIZE
+                and len(data) % NORMAL_COMMAND_TRANSFER_SIZE == 0
+            ):
+                return decode_ffcc_transport(data)
+            return data
         except Exception as exc:
             raise UsbBackendError(f"USB read failed: {exc}") from exc
+
+    def _uses_ffcc_transport(self) -> bool:
+        return (
+            int(getattr(self.device, "idVendor", 0)) == 0x1A86
+            and int(getattr(self.device, "idProduct", 0)) == 0xFFCC
+        )
 
     def _find_device(self) -> Any | None:
         candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]
