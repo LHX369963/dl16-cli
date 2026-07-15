@@ -333,6 +333,46 @@ def test_cli_capture_run_buffer_sets_original_buffer_bit(monkeypatch, tmp_path):
     assert backend.sent_frames[0][11] == 0x80
 
 
+def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    ch6 = b"\x66" * 125 + b"\xa6" * 12
+    ch7 = b"\x77" * 125 + b"\xa7" * 12
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + ch6[:80])
+        + _capture_packet(1, b"\x07\x00" + ch7[:90]),
+        _capture_packet(1, b"\x06\x00" + ch6[80:])
+        + _capture_packet(1, b"\x07\x00" + ch7[90:]),
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "multi"
+    rc = cli.main([
+        "capture", "run", "--buffer", "--channels", "6,7", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--sample-index", "1", "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert backend.sent_frames[1][11:21] == bytes.fromhex("000000ff000000000000")
+    assert (output / "channel-06.bin").read_bytes() == b"\x66" * 125
+    assert (output / "channel-07.bin").read_bytes() == b"\x77" * 125
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["requested_channels"] == [6, 7]
+    assert set(manifest["channels"]) == {"6", "7"}
+
+
+def test_cli_capture_run_rejects_duplicate_channels(capsys, tmp_path):
+    rc = main([
+        "capture", "run", "--channels", "6,6", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--sample-index", "1", "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    assert "duplicate channel" in capsys.readouterr().err
+
+
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):
     firmware = tmp_path / "fw.bin"
     firmware.write_bytes(b"x" * 257)

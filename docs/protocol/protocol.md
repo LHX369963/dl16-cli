@@ -316,6 +316,19 @@ atkdl16 capture parse --input wire.bin
 
 `capture read` saves complete concatenated wire packets without altering them.
 
+One-shot acquisition accepts either one channel or a comma-separated channel set:
+
+```bash
+atkdl16 capture run --buffer --channels 6,7 \
+  --set-time 0.08 --set-hz 250000000 --sample-index 12 \
+  --trigger-position 0 --threshold 1.2 --output-dir capture-buffer
+```
+
+Type-1 packets from enabled channels may be interleaved. The receiver therefore
+tracks each channel independently and stops only after every requested channel
+has reached the configured sample depth plus its transport trailer. Existing
+single-channel scripts remain compatible through `--channel N`.
+
 ## Packed samples and hardware RLE
 
 For type-1 packets, the body is a sequence of packed sample bytes. Each byte contains eight chronological samples, least-significant bit first.

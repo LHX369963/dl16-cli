@@ -85,7 +85,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run_capture = capture_sub.add_parser(
         "run", help="initialize, configure, trigger, acquire and decode in one process"
     )
-    run_capture.add_argument("--channel", type=int, required=True, help="single input channel, 0..15")
+    channel_selection = run_capture.add_mutually_exclusive_group(required=True)
+    channel_selection.add_argument("--channel", type=int, help="single input channel, 0..15")
+    channel_selection.add_argument("--channels", help="comma-separated input channels, for example 0,3,6")
     run_capture.add_argument("--set-time", type=float, required=True, help="capture time in milliseconds")
     run_capture.add_argument("--set-hz", type=int, required=True, help="sampling frequency in Hz")
     run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
@@ -167,6 +169,27 @@ def _parse_enabled(text: str | None) -> list[bool] | None:
     if any(item not in {"0", "1"} for item in values):
         raise AtkDl16Error("enabled mask must contain only comma-separated 0/1 values")
     return [item == "1" for item in values]
+
+
+def _parse_capture_channels(single: int | None, multiple: str | None) -> list[int]:
+    if multiple is None:
+        channels = [single] if single is not None else []
+    else:
+        raw_values = [item.strip() for item in multiple.split(",")]
+        if not raw_values or any(not item for item in raw_values):
+            raise AtkDl16Error("channels must be a non-empty comma-separated list")
+        try:
+            channels = [int(item, 10) for item in raw_values]
+        except ValueError as exc:
+            raise AtkDl16Error("channels must contain decimal channel numbers") from exc
+    if not channels:
+        raise AtkDl16Error("at least one capture channel is required")
+    if len(set(channels)) != len(channels):
+        raise AtkDl16Error("duplicate channel in capture channel list")
+    invalid = [channel for channel in channels if not 0 <= channel <= 15]
+    if invalid:
+        raise AtkDl16Error(f"channel must be in range 0..15, got {invalid[0]}")
+    return sorted(channels)
 
 
 def _load_json_object(path: str) -> dict:
@@ -267,17 +290,22 @@ def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> d
     return manifest
 
 
-def _run_single_channel_capture(
+def _run_multi_channel_capture(
     device: AtkDevice,
     backend: UsbBackend,
     params: SamplingParameters,
     *,
-    channel: int,
+    channels: Sequence[int],
     output_dir: str,
     read_size: int,
 ) -> dict:
-    if not 0 <= channel <= 15:
-        raise AtkDl16Error(f"channel must be in range 0..15, got {channel}")
+    channels = list(channels)
+    if not channels:
+        raise AtkDl16Error("at least one capture channel is required")
+    if len(set(channels)) != len(channels):
+        raise AtkDl16Error("duplicate channel in capture channel list")
+    if any(not 0 <= channel <= 15 for channel in channels):
+        raise AtkDl16Error("capture channels must be in range 0..15")
     if read_size <= 0 or read_size % 2048:
         raise AtkDl16Error("capture run read-size must be a positive multiple of 2048")
 
@@ -295,10 +323,11 @@ def _run_single_channel_capture(
     device.initialize_connection()
     states = [TriggerState.NULL] * 16
     enabled = [False] * 16
-    enabled[channel] = True
+    for channel in channels:
+        enabled[channel] = True
     parser = Dl16StreamParser()
     packets: list[Dl16CapturePacket] = []
-    packed = bytearray()
+    packed = {channel: bytearray() for channel in channels}
     target_wire_bytes = expected_bytes + 12
     capture_started = False
     try:
@@ -308,18 +337,24 @@ def _run_single_channel_capture(
             states, enabled=enabled, collect_type=params.collect_type
         )
         capture_started = True
-        while len(packed) < target_wire_bytes:
+        while any(len(data) < target_wire_bytes for data in packed.values()):
             chunk = backend.read_chunk(size=read_size)
             if not chunk:
+                progress = ", ".join(
+                    f"CH{channel}={len(data)}/{target_wire_bytes}"
+                    for channel, data in packed.items()
+                )
                 raise AtkDl16Error(
-                    f"capture stream ended at {len(packed)} of {target_wire_bytes} wire sample bytes"
+                    f"capture stream ended before all channels completed ({progress})"
                 )
             for packet in parser.feed(chunk):
                 packets.append(packet)
-                if packet.packet_type == 1 and packet.metadata0 == channel:
-                    packed.extend(packet.body)
-                    if len(packed) >= target_wire_bytes:
-                        break
+                if (
+                    packet.packet_type == 1
+                    and packet.metadata0 in packed
+                    and len(packed[packet.metadata0]) < target_wire_bytes
+                ):
+                    packed[packet.metadata0].extend(packet.body)
         # The original receive thread leaves about 65 ms between the final
         # sample block and STOP, allowing the FPGA completion path to settle.
         time.sleep(0.07)
@@ -327,34 +362,59 @@ def _run_single_channel_capture(
         if capture_started:
             device.stop_no_response()
 
-    samples = bytes(packed[:expected_bytes])
-    if len(samples) != expected_bytes:
-        raise AtkDl16Error(
-            f"capture returned {len(samples)} of {expected_bytes} expected packed sample bytes"
-        )
+    samples = {channel: bytes(data[:expected_bytes]) for channel, data in packed.items()}
+    for channel, data in samples.items():
+        if len(data) != expected_bytes:
+            raise AtkDl16Error(
+                f"CH{channel} returned {len(data)} of {expected_bytes} expected packed sample bytes"
+            )
     manifest = {
         "bit_order": "lsb-first",
         "mode": "buffer" if params.is_buffer else "stream",
         "sample_rate_hz": params.set_hz,
         "sample_depth": depth,
         "transport_trailer_bytes_removed": 12,
+        "requested_channels": channels,
         "channels": {
             str(channel): {
                 "file": f"channel-{channel:02d}.bin",
-                "packed_bytes": len(samples),
+                "packed_bytes": len(samples[channel]),
                 "samples": depth,
             }
+            for channel in channels
         },
     }
     try:
         (destination / "wire.bin").write_bytes(b"".join(packet.raw for packet in packets))
-        (destination / f"channel-{channel:02d}.bin").write_bytes(samples)
+        for channel, data in samples.items():
+            (destination / f"channel-{channel:02d}.bin").write_bytes(data)
         (destination / "manifest.json").write_text(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         )
     except OSError as exc:
         raise AtkDl16Error(f"cannot write capture output {output_dir!r}: {exc}") from exc
     return manifest
+
+
+def _run_single_channel_capture(
+    device: AtkDevice,
+    backend: UsbBackend,
+    params: SamplingParameters,
+    *,
+    channel: int,
+    output_dir: str,
+    read_size: int,
+) -> dict:
+    """Backward-compatible wrapper for callers using the original private helper."""
+
+    return _run_multi_channel_capture(
+        device,
+        backend,
+        params,
+        channels=[channel],
+        output_dir=output_dir,
+        read_size=read_size,
+    )
 
 
 def _read_binary_file(path: str, label: str) -> bytes:
@@ -402,6 +462,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        run_channels: list[int] | None = None
+        if args.command == "capture" and args.capture_command == "run":
+            run_channels = _parse_capture_channels(args.channel, args.channels)
         if args.command == "capture":
             if args.capture_command == "parse":
                 for index, packet in enumerate(_parse_capture_file(args.input)):
@@ -570,11 +633,12 @@ def main(argv: Sequence[str] | None = None) -> int:
                 is_buffer=args.buffer,
                 collect_type=1,
             )
-            manifest = _run_single_channel_capture(
+            assert run_channels is not None
+            manifest = _run_multi_channel_capture(
                 device,
                 backend,
                 params,
-                channel=args.channel,
+                channels=run_channels,
                 output_dir=args.output_dir,
                 read_size=args.read_size,
             )
