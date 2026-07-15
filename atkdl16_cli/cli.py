@@ -16,6 +16,7 @@ from .capture import (
     interpret_capture_packet,
 )
 from .device import AtkDevice
+from .decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
 from .errors import AtkDl16Error
 from .export import export_capture
 from .firmware import (
@@ -140,6 +141,30 @@ def _build_parser() -> argparse.ArgumentParser:
     stream_capture.add_argument("--sample-index", type=int, default=None)
     stream_capture.add_argument("--output-dir", required=True)
     stream_capture.add_argument("--read-size", type=int, default=16384)
+    uart = capture_sub.add_parser("uart", help="offline UART decode from a capture directory")
+    uart.add_argument("--input-dir", required=True)
+    uart.add_argument("--channel", type=int, required=True)
+    uart.add_argument("--baud", type=int, required=True)
+    uart.add_argument("--data-bits", type=int, default=8)
+    uart.add_argument("--parity", choices=("none", "even", "odd"), default="none")
+    uart.add_argument("--stop-bits", type=int, choices=(1, 2), default=1)
+    uart.add_argument("--inverted", action="store_true")
+    uart.add_argument("--output", default=None, help="optional JSON output file")
+    i2c = capture_sub.add_parser("i2c", help="offline I2C decode from a capture directory")
+    i2c.add_argument("--input-dir", required=True)
+    i2c.add_argument("--scl", type=int, required=True, help="SCL channel")
+    i2c.add_argument("--sda", type=int, required=True, help="SDA channel")
+    i2c.add_argument("--output", default=None, help="optional JSON output file")
+    spi = capture_sub.add_parser("spi", help="offline SPI decode from a capture directory")
+    spi.add_argument("--input-dir", required=True)
+    spi.add_argument("--clock", type=int, required=True)
+    spi.add_argument("--mosi", type=int, default=None)
+    spi.add_argument("--miso", type=int, default=None)
+    spi.add_argument("--cs", type=int, default=None)
+    spi.add_argument("--mode", type=int, choices=range(4), default=0)
+    spi.add_argument("--bits-per-word", type=int, default=8)
+    spi.add_argument("--bit-order", choices=("msb", "lsb"), default="msb")
+    spi.add_argument("--output", default=None, help="optional JSON output file")
 
     trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
     trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
@@ -332,6 +357,17 @@ def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> d
     except OSError as exc:
         raise AtkDl16Error(f"cannot write decoded capture to {output_dir!r}: {exc}") from exc
     return manifest
+
+
+def _emit_protocol_decode(result: dict, output: str | None) -> None:
+    if output is not None:
+        try:
+            destination = Path(output)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
+        except OSError as exc:
+            raise AtkDl16Error(f"cannot write protocol decode {output!r}: {exc}") from exc
+    print(json.dumps(result, sort_keys=True))
 
 
 def _run_multi_channel_capture(
@@ -599,6 +635,29 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "samples": result.samples,
                     "rows": result.rows,
                 }, sort_keys=True))
+                return 0
+            if args.capture_command == "uart":
+                result = decode_uart_capture(
+                    args.input_dir, channel=args.channel, baud=args.baud,
+                    data_bits=args.data_bits, parity=args.parity,
+                    stop_bits=args.stop_bits, inverted=args.inverted,
+                )
+                _emit_protocol_decode(result, args.output)
+                return 0
+            if args.capture_command == "i2c":
+                result = decode_i2c_capture(
+                    args.input_dir, scl_channel=args.scl, sda_channel=args.sda
+                )
+                _emit_protocol_decode(result, args.output)
+                return 0
+            if args.capture_command == "spi":
+                result = decode_spi_capture(
+                    args.input_dir, clock_channel=args.clock,
+                    mosi_channel=args.mosi, miso_channel=args.miso,
+                    cs_channel=args.cs, mode=args.mode,
+                    bits_per_word=args.bits_per_word, bit_order=args.bit_order,
+                )
+                _emit_protocol_decode(result, args.output)
                 return 0
             if args.capture_command == "run" and args.dry_run:
                 raise AtkDl16Error("capture run requires connected hardware; use capture configure for dry-run")
