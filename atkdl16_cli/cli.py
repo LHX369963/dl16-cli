@@ -30,6 +30,7 @@ from .firmware import (
 )
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .sampling import resolve_sample_index, validate_capture_combination
+from .session import Dl16Session, run_json_session
 from .streaming import stream_capture_to_disk
 from .trigger import SerialTriggerConfig, StageCondition, TriggerState, parse_trigger_states
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
@@ -52,6 +53,8 @@ def _build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("list", help="list supported or attached devices")
     sub.add_parser("info", help="print device info query frame or query a device")
+    session = sub.add_parser("session", help="run newline-delimited JSON commands over one persistent link")
+    session.add_argument("--commands", default="-", help="JSONL command file; '-' reads standard input")
 
     stop = sub.add_parser("stop", help="send stop command")
     stop.add_argument("--channel", type=int, default=None)
@@ -614,6 +617,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(json.dumps(manifest, sort_keys=True))
             return 0
 
+        if args.command == "session" and args.dry_run:
+            raise AtkDl16Error("session requires connected hardware")
+
         if args.command == "firmware" and args.firmware_command == "flash":
             if not args.i_understand_this_can_brick:
                 raise AtkDl16Error("firmware flash requires --i-understand-this-can-brick")
@@ -628,6 +634,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
         backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
         device = AtkDevice(backend)
+
+        if args.command == "session":
+            if args.commands == "-":
+                return run_json_session(Dl16Session(backend, device=device), sys.stdin, sys.stdout)
+            try:
+                with Path(args.commands).open(encoding="utf-8") as source:
+                    return run_json_session(Dl16Session(backend, device=device), source, sys.stdout)
+            except OSError as exc:
+                raise AtkDl16Error(f"cannot read session commands {args.commands!r}: {exc}") from exc
 
         if args.command == "list":
             for info in backend.list_devices():
