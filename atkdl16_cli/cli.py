@@ -94,6 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
     run_capture.add_argument("--sample-index", type=int, required=True, help="original sampling-rate index")
     run_capture.add_argument("--buffer", action="store_true", help="use hardware Buffer acquisition mode")
+    run_capture.add_argument("--rle", action="store_true", help="enable Buffer hardware RLE compression")
     run_capture.add_argument("--output-dir", required=True)
     run_capture.add_argument("--read-size", type=int, default=16384)
 
@@ -317,6 +318,7 @@ def _run_multi_channel_capture(
     destination = Path(output_dir)
     try:
         destination.mkdir(parents=True, exist_ok=True)
+        wire_stream = (destination / "wire.bin").open("wb")
     except OSError as exc:
         raise AtkDl16Error(f"cannot create capture output {output_dir!r}: {exc}") from exc
 
@@ -326,10 +328,12 @@ def _run_multi_channel_capture(
     for channel in channels:
         enabled[channel] = True
     parser = Dl16StreamParser()
-    packets: list[Dl16CapturePacket] = []
     packed = {channel: bytearray() for channel in channels}
-    target_wire_bytes = expected_bytes + 12
+    trailer_bytes = 1 if params.is_rle else 12
+    target_wire_bytes = expected_bytes + trailer_bytes
     capture_started = False
+    sample_started = False
+    hardware_complete = False
     try:
         device.configure_sampling_no_response(params)
         time.sleep(0.06)
@@ -348,44 +352,65 @@ def _run_multi_channel_capture(
                     f"capture stream ended before all channels completed ({progress})"
                 )
             for packet in parser.feed(chunk):
-                packets.append(packet)
+                wire_stream.write(packet.raw)
                 if (
                     packet.packet_type == 1
                     and packet.metadata0 in packed
                     and len(packed[packet.metadata0]) < target_wire_bytes
                 ):
-                    packed[packet.metadata0].extend(packet.body)
+                    block = decode_channel_packet(packet, is_rle=params.is_rle)
+                    packed[packet.metadata0].extend(block.packed_samples)
+                    sample_started = True
+                elif params.is_rle and sample_started and packet.packet_type == 6:
+                    # In RLE mode the hardware buffer can fill before the
+                    # requested depth.  The original receiver accepts the
+                    # resulting shorter acquisition; type 6 marks completion.
+                    hardware_complete = True
+            if hardware_complete:
+                break
         # The original receive thread leaves about 65 ms between the final
         # sample block and STOP, allowing the FPGA completion path to settle.
         time.sleep(0.07)
     finally:
+        wire_stream.close()
         if capture_started:
             device.stop_no_response()
 
-    samples = {channel: bytes(data[:expected_bytes]) for channel, data in packed.items()}
+    samples: dict[int, bytes] = {}
+    for channel, data in packed.items():
+        if len(data) >= target_wire_bytes:
+            samples[channel] = bytes(data[:expected_bytes])
+        elif params.is_rle and hardware_complete and len(data) > trailer_bytes:
+            samples[channel] = bytes(data[:-trailer_bytes])
+        else:
+            samples[channel] = bytes(data[:expected_bytes])
     for channel, data in samples.items():
-        if len(data) != expected_bytes:
+        if len(data) != expected_bytes and not (params.is_rle and hardware_complete and data):
             raise AtkDl16Error(
                 f"CH{channel} returned {len(data)} of {expected_bytes} expected packed sample bytes"
             )
+    actual_depth = min(min(len(data) * 8, depth) for data in samples.values())
+    shortened = actual_depth < depth
     manifest = {
         "bit_order": "lsb-first",
         "mode": "buffer" if params.is_buffer else "stream",
+        "rle": params.is_rle,
         "sample_rate_hz": params.set_hz,
-        "sample_depth": depth,
-        "transport_trailer_bytes_removed": 12,
+        "requested_sample_depth": depth,
+        "sample_depth": actual_depth,
+        "capture_shortened_by_hardware": shortened,
+        "transport_trailer_bytes_removed": trailer_bytes,
         "requested_channels": channels,
         "channels": {
             str(channel): {
                 "file": f"channel-{channel:02d}.bin",
                 "packed_bytes": len(samples[channel]),
-                "samples": depth,
+                "samples": min(len(samples[channel]) * 8, depth),
             }
             for channel in channels
         },
     }
     try:
-        (destination / "wire.bin").write_bytes(b"".join(packet.raw for packet in packets))
         for channel, data in samples.items():
             (destination / f"channel-{channel:02d}.bin").write_bytes(data)
         (destination / "manifest.json").write_text(
@@ -465,6 +490,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_channels: list[int] | None = None
         if args.command == "capture" and args.capture_command == "run":
             run_channels = _parse_capture_channels(args.channel, args.channels)
+            if args.rle and not args.buffer:
+                raise AtkDl16Error("capture run --rle requires --buffer")
         if args.command == "capture":
             if args.capture_command == "parse":
                 for index, packet in enumerate(_parse_capture_file(args.input)):
@@ -630,6 +657,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trigger_position_percent=args.trigger_position,
                 threshold_level=args.threshold,
                 sample_index=args.sample_index,
+                is_rle=args.rle,
                 is_buffer=args.buffer,
                 collect_type=1,
             )

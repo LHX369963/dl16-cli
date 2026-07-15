@@ -329,6 +329,21 @@ tracks each channel independently and stops only after every requested channel
 has reached the configured sample depth plus its transport trailer. Existing
 single-channel scripts remain compatible through `--channel N`.
 
+Buffer hardware RLE can be enabled for one or more channels:
+
+```bash
+atkdl16 capture run --buffer --rle --channels 6,7 \
+  --set-time 2500 --set-hz 250000000 --sample-index 12 \
+  --trigger-position 0 --threshold 1.2 --output-dir capture-rle
+```
+
+On DL16, the original UI exposes RLE as starred sampling times beyond the
+ordinary 1 Gbit Buffer depth. Very short acquisitions with the RLE bit set do
+not produce sample packets on the tested hardware. RLE capture completion is
+tracked using expanded per-channel lengths and the type-6 hardware completion
+packet. If compressed memory fills before the requested depth, the shorter
+valid result is retained and reported by `capture_shortened_by_hardware`.
+
 ## Packed samples and hardware RLE
 
 For type-1 packets, the body is a sequence of packed sample bytes. Each byte contains eight chronological samples, least-significant bit first.
@@ -341,6 +356,11 @@ byte 1: packed sample value
 ```
 
 The original receiver expands each packed value `repeat count` times into a 512 KiB packet buffer. The implementation enforces the same per-packet output limit.
+
+Ordinary Buffer packets expose 12 extra expanded bytes after the requested
+samples. RLE packets expose one extra expanded packed byte instead; the online
+receiver removes the appropriate mode-specific trailer independently for every
+channel.
 
 Decode a saved stream into one packed file per channel:
 

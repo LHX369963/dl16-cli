@@ -373,6 +373,68 @@ def test_cli_capture_run_rejects_duplicate_channels(capsys, tmp_path):
     assert "duplicate channel" in capsys.readouterr().err
 
 
+def test_cli_capture_run_buffer_rle_decodes_online(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    # RLE uses one expanded packed-byte trailer (ordinary Buffer uses 12).
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + bytes((125, 0x66, 1, 0xA6)))
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "rle"
+    rc = cli.main([
+        "capture", "run", "--buffer", "--rle", "--channel", "6",
+        "--set-time", "1", "--set-hz", "1000000", "--trigger-position", "0",
+        "--threshold", "1.2", "--sample-index", "1", "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert backend.sent_frames[0][11] == 0xC0
+    assert (output / "channel-06.bin").read_bytes() == b"\x66" * 125
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["mode"] == "buffer"
+    assert manifest["rle"] is True
+    assert manifest["sample_depth"] == 1000
+    assert manifest["transport_trailer_bytes_removed"] == 1
+
+
+def test_cli_capture_run_rle_accepts_hardware_shortened_capture(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + bytes((80, 0x55, 1, 0xA6)))
+        + _capture_packet(6, b"\x00\x00")
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "short-rle"
+    rc = cli.main([
+        "capture", "run", "--buffer", "--rle", "--channel", "6",
+        "--set-time", "1", "--set-hz", "1000000", "--trigger-position", "0",
+        "--threshold", "1.2", "--sample-index", "1", "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert (output / "channel-06.bin").read_bytes() == b"\x55" * 80
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["requested_sample_depth"] == 1000
+    assert manifest["sample_depth"] == 640
+    assert manifest["capture_shortened_by_hardware"] is True
+
+
+def test_cli_capture_run_rejects_rle_without_buffer(capsys, tmp_path):
+    rc = main([
+        "capture", "run", "--rle", "--channel", "6", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--sample-index", "1", "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    assert "requires --buffer" in capsys.readouterr().err
+
+
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):
     firmware = tmp_path / "fw.bin"
     firmware.write_bytes(b"x" * 257)

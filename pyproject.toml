@@ -16,6 +16,9 @@ usb = ["pyusb>=1.2"]
 [project.scripts]
 atkdl16 = "atkdl16_cli.cli:main"
 
+[tool.setuptools]
+packages = ["atkdl16_cli"]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
