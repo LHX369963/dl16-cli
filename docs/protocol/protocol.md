@@ -104,6 +104,12 @@ The hardware backend exposes the tested command builders plus independent bulk-I
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
+For an FFCC device that was plugged in before the CLI started, normal commands
+automatically recover the link without a physical hotplug: clear both bulk
+endpoints, issue a USB bus reset, immediately reclaim the interface, wait the
+original application's 400 ms settle interval, retry the MCU query up to six
+times, query both FPGA banks, and validate the `DL16` information response.
+
 Firmware frame planning is available offline. Hardware flashing is exposed only behind the explicit `--i-understand-this-can-brick` guard and should be used only after entering the bootloader and confirming the correct transport mode.
 
 ## Raw recovered command CLI

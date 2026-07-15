@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
 from .capture import SamplingParameters, build_parameter_setting_payload
 from .errors import ProtocolError
+from .errors import UsbBackendError
+from .firmware import build_get_mcu_version_frame
 from .protocol import Command, build_transport_frame
 from .pwm import build_pwm_start_payload, build_pwm_stop_payload
 from .trigger import (
@@ -30,6 +35,58 @@ class AtkDevice:
 
     def get_device_data(self) -> bytes:
         return self.backend.send_frame(self.get_device_data_frame())
+
+    def initialize_connection(
+        self, *, sleep_fn: Callable[[float], None] = time.sleep
+    ) -> bytes:
+        recover = getattr(self.backend, "recover_ffcc_link", None)
+        if callable(recover):
+            recover()
+        sleep_fn(0.4)
+
+        mcu_response: bytes | None = None
+        for attempt in range(6):
+            self.backend.write_chunk(build_get_mcu_version_frame(), timeout_ms=500)
+            for _ in range(16):
+                try:
+                    response = self.backend.read_chunk(size=512, timeout_ms=100)
+                except UsbBackendError:
+                    break
+                if response.startswith(b"\x0a\x81"):
+                    mcu_response = response
+                    break
+                if not response:
+                    break
+            if mcu_response is not None:
+                break
+            if attempt < 5:
+                sleep_fn(0.05)
+        if mcu_response is None:
+            raise UsbBackendError("DL16 MCU did not answer after USB link recovery")
+
+        for index in (0, 1):
+            self.backend.write_chunk(
+                bytes((0x0A, 0x87, index, 0x0B)).ljust(510, b"\x00"), timeout_ms=500
+            )
+        fpga_responses = 0
+        for _ in range(32):
+            try:
+                response = self.backend.read_chunk(size=512, timeout_ms=100)
+            except UsbBackendError:
+                break
+            if response.startswith(b"\x0a\x87"):
+                fpga_responses += 1
+                if fpga_responses == 2:
+                    break
+            if not response:
+                break
+        if fpga_responses != 2:
+            raise UsbBackendError("DL16 FPGA information handshake was incomplete")
+
+        response = self.get_device_data()
+        if b"DL16" not in response:
+            raise UsbBackendError("DL16 device information response was not valid")
+        return response
 
     def stop(self, channel: int | None = None) -> bytes:
         if channel is None:

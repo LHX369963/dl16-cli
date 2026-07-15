@@ -64,6 +64,8 @@ class FakeDevice:
         self.detached = []
         self.claimed = []
         self.configuration_set = False
+        self.cleared_halts = []
+        self.reset_count = 0
 
     def __iter__(self):
         return iter(self.configs)
@@ -76,6 +78,12 @@ class FakeDevice:
 
     def set_configuration(self):
         self.configuration_set = True
+
+    def clear_halt(self, endpoint):
+        self.cleared_halts.append(endpoint)
+
+    def reset(self):
+        self.reset_count += 1
 
 
 class FakeCore:
@@ -148,6 +156,19 @@ def test_pyusb_backend_close_releases_interface_and_disposes_resources():
     backend.close()
     assert dev.claimed == []
     assert dev.disposed is True
+
+
+def test_pyusb_backend_recover_ffcc_link_clears_endpoints_resets_and_reopens():
+    from atkdl16_cli.usb import PyUsbBackend
+
+    dev, out_ep, in_ep = make_supported_fake_device()
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
+    backend.recover_ffcc_link()
+    assert dev.cleared_halts == [0x02, 0x81]
+    assert dev.reset_count == 1
+    assert backend.write_endpoint is out_ep
+    assert backend.read_endpoint is in_ep
+    assert dev.claimed == [0]
 
 class FakeIoEndpoint(FakeEndpoint):
     def __init__(self, address, max_packet_size=64, read_data=b"\xaa\xbb"):

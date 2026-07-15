@@ -4,6 +4,24 @@ from atkdl16_cli.pwm import build_pwm_start_payload, build_pwm_stop_payload
 from atkdl16_cli.usb import DeviceInfo, DryRunBackend
 
 
+class InitializationBackend(DryRunBackend):
+    def __init__(self):
+        super().__init__(read_chunks=[
+            bytes(512),
+            b"\x0a\x81\x01mcu" + bytes(505),
+            b"\x0a\x87\x01fpga0" + bytes(503),
+            b"\x0a\x87\x02fpga1" + bytes(503),
+        ])
+        self.recovered = False
+
+    def recover_ffcc_link(self):
+        self.recovered = True
+
+    def send_frame(self, frame):
+        self.sent_frames.append(bytes(frame))
+        return b"\x0a\x02\x0d\x00\xff\x00\x01\x02\x10\x02\x16\x0b\x08DL16\x00\x0b"
+
+
 def test_dry_run_backend_lists_configured_devices():
     backend = DryRunBackend(devices=[DeviceInfo(vid=0x1A86, pid=0xFFCC, bus=1, address=2, path="1-2", speed="high")])
     assert backend.list_devices() == [DeviceInfo(vid=0x1A86, pid=0xFFCC, bus=1, address=2, path="1-2", speed="high")]
@@ -60,6 +78,18 @@ def test_get_device_data_sends_query_frame():
     expected = build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert response == b""
     assert backend.sent_frames == [expected]
+
+
+def test_initialize_connection_recovers_waits_and_runs_mcu_fpga_handshake():
+    backend = InitializationBackend()
+    sleeps = []
+    response = AtkDevice(backend).initialize_connection(sleep_fn=sleeps.append)
+    assert backend.recovered is True
+    assert sleeps[0] == 0.4
+    assert backend.written_chunks[0][:3] == b"\x0a\x81\x0b"
+    assert backend.written_chunks[-2][:4] == b"\x0a\x87\x00\x0b"
+    assert backend.written_chunks[-1][:4] == b"\x0a\x87\x01\x0b"
+    assert b"DL16" in response
 
 
 def test_raw_parameter_and_trigger_methods_send_expected_frames():

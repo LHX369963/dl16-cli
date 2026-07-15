@@ -340,6 +340,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{info.usb_id} path={info.path} speed={info.speed}")
             return 0
 
+        if (
+            not args.dry_run
+            and args.command in {"info", "stop", "pwm"}
+            and callable(getattr(backend, "recover_ffcc_link", None))
+        ):
+            device.initialize_connection()
+
         if args.command == "info":
             if args.dry_run:
                 _print_frame("GET_DEVICE_DATA", device.get_device_data_frame())

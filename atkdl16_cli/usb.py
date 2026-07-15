@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Protocol
+import time
 
 from .errors import ProtocolError, UsbBackendError
 from .protocol import SUPPORTED_USB_IDS
@@ -186,6 +187,51 @@ class PyUsbBackend:
         self.write_endpoint, self.read_endpoint = self._find_endpoints(self.device)
         if self.write_endpoint is None:
             raise UsbBackendError("could not find USB OUT endpoint")
+
+    def recover_ffcc_link(self, timeout_seconds: float = 3.0) -> None:
+        """Recover an already-plugged FFCC device without a physical hotplug."""
+
+        if self._claimed:
+            self.close()
+        if self.device is None:
+            self.device = self._find_device()
+        if self.device is None:
+            raise UsbBackendError("no supported ATK DL16 device found")
+        if (int(self.device.idVendor), int(self.device.idProduct)) != (0x1A86, 0xFFCC):
+            self.open()
+            return
+
+        try:
+            self.device.clear_halt(0x02)
+            self.device.clear_halt(0x81)
+            self.device.reset()
+        except Exception as exc:
+            raise UsbBackendError(f"FFCC USB link reset failed: {exc}") from exc
+        if hasattr(self.usb_util, "dispose_resources"):
+            self.usb_util.dispose_resources(self.device)
+        self.device = None
+        self.write_endpoint = None
+        self.read_endpoint = None
+        self._claimed = False
+
+        deadline = time.monotonic() + timeout_seconds
+        last_error: Exception | None = None
+        while time.monotonic() < deadline:
+            self.device = self._find_device()
+            if self.device is not None:
+                try:
+                    self.open()
+                    return
+                except Exception as exc:
+                    last_error = exc
+                    if hasattr(self.usb_util, "dispose_resources"):
+                        self.usb_util.dispose_resources(self.device)
+                    self.device = None
+                    self.write_endpoint = None
+                    self.read_endpoint = None
+                    self._claimed = False
+            time.sleep(0.005)
+        raise UsbBackendError(f"FFCC device did not become claimable after reset: {last_error}")
 
     def close(self) -> None:
         if self.device is not None and self._claimed:
