@@ -42,6 +42,15 @@ def test_simple_trigger_appends_collect_type_flags():
     assert build_simple_trigger_payload(states, collect_type=3) == bytes.fromhex("140001")
 
 
+def test_simple_trigger_uses_f_for_enabled_dont_care_channel_seen_on_dl16():
+    states = [TriggerState.NULL] * 16
+    enabled = [False] * 16
+    enabled[7] = True
+    assert build_simple_trigger_payload(states, enabled=enabled, collect_type=0) == bytes.fromhex(
+        "0000000f000000000000"
+    )
+
+
 @pytest.mark.parametrize("text", ["", "rising,bogus"])
 def test_trigger_state_parser_rejects_invalid_input(text):
     with pytest.raises(ProtocolError):

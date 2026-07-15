@@ -4,7 +4,7 @@ from typing import Literal
 
 from .errors import ProtocolError
 
-PWM_BASE_HZ = 100_000_000
+PWM_BASE_HZ = 200_000_000
 
 
 def _validate_channel(channel: int) -> None:

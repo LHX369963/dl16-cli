@@ -6,6 +6,49 @@ from typing import Any, Protocol
 from .errors import ProtocolError, UsbBackendError
 from .protocol import SUPPORTED_USB_IDS
 
+NORMAL_COMMAND_TRANSFER_SIZE = 0x800
+
+
+def _require_ffcc_block_size(data: bytes) -> bytes:
+    data = bytes(data)
+    if len(data) % NORMAL_COMMAND_TRANSFER_SIZE:
+        raise ProtocolError(
+            f"FFCC transport data must be a multiple of {NORMAL_COMMAND_TRANSFER_SIZE} bytes, "
+            f"got {len(data)}"
+        )
+    return data
+
+
+def encode_ffcc_transport(data: bytes) -> bytes:
+    data = _require_ffcc_block_size(data)
+    encoded = bytearray(len(data))
+    for block_start in range(0, len(data), NORMAL_COMMAND_TRANSFER_SIZE):
+        block = data[block_start : block_start + NORMAL_COMMAND_TRANSFER_SIZE]
+        words = [block[offset : offset + 2] for offset in range(0, len(block), 2)]
+        encoded[block_start : block_start + NORMAL_COMMAND_TRANSFER_SIZE] = b"".join(
+            word for lane in range(4) for word in words[lane::4]
+        )
+    return bytes(encoded)
+
+
+def decode_ffcc_transport(data: bytes) -> bytes:
+    data = _require_ffcc_block_size(data)
+    decoded = bytearray(len(data))
+    words_per_lane = NORMAL_COMMAND_TRANSFER_SIZE // 2 // 4
+    lane_size = words_per_lane * 2
+    for block_start in range(0, len(data), NORMAL_COMMAND_TRANSFER_SIZE):
+        block = data[block_start : block_start + NORMAL_COMMAND_TRANSFER_SIZE]
+        lanes = [
+            [
+                block[lane_start + offset : lane_start + offset + 2]
+                for offset in range(0, lane_size, 2)
+            ]
+            for lane_start in range(0, NORMAL_COMMAND_TRANSFER_SIZE, lane_size)
+        ]
+        words = [lanes[index % 4][index // 4] for index in range(words_per_lane * 4)]
+        decoded[block_start : block_start + NORMAL_COMMAND_TRANSFER_SIZE] = b"".join(words)
+    return bytes(decoded)
+
 
 @dataclass(frozen=True)
 class DeviceInfo:
@@ -137,8 +180,6 @@ class PyUsbBackend:
             self.device = self._find_device()
         if self.device is None:
             raise UsbBackendError("no supported ATK DL16 device found")
-        if hasattr(self.device, "set_configuration"):
-            self.device.set_configuration()
         self._detach_kernel_driver(0)
         self.usb_util.claim_interface(self.device, 0)
         self._claimed = True
@@ -154,12 +195,29 @@ class PyUsbBackend:
             self.usb_util.dispose_resources(self.device)
 
     def send_frame(self, frame: bytes) -> bytes:
-        self.write_chunk(frame)
+        if self.write_endpoint is None or self.read_endpoint is None:
+            self.open()
+        frame = bytes(frame)
+        padded_size = (
+            (len(frame) + NORMAL_COMMAND_TRANSFER_SIZE - 1)
+            // NORMAL_COMMAND_TRANSFER_SIZE
+            * NORMAL_COMMAND_TRANSFER_SIZE
+        )
+        transfer = frame.ljust(padded_size, b"\x00")
+        uses_ffcc_transport = (
+            int(getattr(self.device, "idVendor", 0)) == 0x1A86
+            and int(getattr(self.device, "idProduct", 0)) == 0xFFCC
+        )
+        if uses_ffcc_transport:
+            transfer = encode_ffcc_transport(transfer)
+        self.write_chunk(transfer)
         if self.read_endpoint is None:
             return b""
-        packet_size = int(getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64)
-        data = self.read_endpoint.read(packet_size, timeout=self.timeout_ms)
-        return bytes(data)
+        read_size = NORMAL_COMMAND_TRANSFER_SIZE if uses_ffcc_transport else int(
+            getattr(self.read_endpoint, "wMaxPacketSize", 64) or 64
+        )
+        data = bytes(self.read_endpoint.read(read_size, timeout=self.timeout_ms))
+        return decode_ffcc_transport(data) if uses_ffcc_transport else data
 
     def write_chunk(self, data: bytes, timeout_ms: int | None = None) -> int:
         if self.write_endpoint is None:

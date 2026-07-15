@@ -41,6 +41,12 @@ xorout  = 0xffffffff
 check("123456789") = 0xd202d277
 ```
 
+For `1a86:ffcc`, normal frames are zero-padded to a 2048-byte boundary and then
+de-interleaved into four 16-bit-word lanes before bulk OUT. Bulk IN capture data
+uses the inverse lane transform. The original application does not issue
+`SET_CONFIGURATION` when opening this device; doing so was observed to leave the
+DL16 endpoints unresponsive until a physical replug.
+
 ## Implemented command IDs
 
 | Command | Value | Implemented behavior |
@@ -62,9 +68,12 @@ bytes 5-8: duty_count, little-endian in the prototype
 ```
 
 ```text
-period_count = int(100_000_000 / frequency_hz)
+period_count = int(200_000_000 / frequency_hz)
 duty_count = int(period_count * duty_percent / 100)
 ```
+
+The 200 MHz counter clock is confirmed by a live 1 kHz/50% original-application
+transaction (`period_count=200000`, `duty_count=100000`) and a 1 MHz CH7 capture.
 
 ## PWM stop payload
 

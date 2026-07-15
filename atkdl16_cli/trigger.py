@@ -59,6 +59,7 @@ def pack_trigger_states(
     *,
     enabled: Sequence[bool] | None = None,
     channel_offset: int = 0,
+    null_nibble: int = 0x7,
 ) -> bytes:
     if channel_offset < 0 or channel_offset % 2:
         raise ProtocolError(f"channel_offset must be a non-negative even number, got {channel_offset}")
@@ -71,10 +72,12 @@ def pack_trigger_states(
 
     output = bytearray(channel_offset // 2)
     for index in range(0, len(states), 2):
-        high = _NIBBLE[TriggerState(states[index])] if enabled[index] else 0
+        high_state = TriggerState(states[index])
+        high = (null_nibble if high_state == TriggerState.NULL else _NIBBLE[high_state]) if enabled[index] else 0
         low = 0
         if index + 1 < len(states):
-            low = _NIBBLE[TriggerState(states[index + 1])] if enabled[index + 1] else 0
+            low_state = TriggerState(states[index + 1])
+            low = (null_nibble if low_state == TriggerState.NULL else _NIBBLE[low_state]) if enabled[index + 1] else 0
         output.append((high << 4) | low)
     return bytes(output)
 
@@ -88,7 +91,9 @@ def build_simple_trigger_payload(
 ) -> bytes:
     if not 0 <= collect_type <= 0xFF:
         raise ProtocolError(f"collect_type must fit in one byte, got {collect_type}")
-    return pack_trigger_states(states, enabled=enabled, channel_offset=channel_offset) + bytes(
+    return pack_trigger_states(
+        states, enabled=enabled, channel_offset=channel_offset, null_nibble=0xF
+    ) + bytes(
         (1 if collect_type == 2 else 0, 1 if collect_type == 3 else 0)
     )
 

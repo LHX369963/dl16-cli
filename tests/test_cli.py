@@ -23,7 +23,7 @@ def test_cli_pwm_start_dry_run_prints_frame(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "PWM_START" in out
-    assert "170a11a086010050c30000" in out
+    assert "170a11400d0300a0860100" in out
 
 
 def test_cli_pwm_stop_dry_run_prints_frame(capsys):
