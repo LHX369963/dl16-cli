@@ -326,7 +326,7 @@ def _run_single_channel_capture(
         if capture_started:
             device.stop_no_response()
 
-    samples = bytes(packed[12 : 12 + expected_bytes])
+    samples = bytes(packed[:expected_bytes])
     if len(samples) != expected_bytes:
         raise AtkDl16Error(
             f"capture returned {len(samples)} of {expected_bytes} expected packed sample bytes"
@@ -335,7 +335,7 @@ def _run_single_channel_capture(
         "bit_order": "lsb-first",
         "sample_rate_hz": params.set_hz,
         "sample_depth": depth,
-        "transport_header_bytes_removed": 12,
+        "transport_trailer_bytes_removed": 12,
         "channels": {
             str(channel): {
                 "file": f"channel-{channel:02d}.bin",

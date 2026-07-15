@@ -6,6 +6,7 @@ from typing import Literal
 from .errors import ProtocolError
 
 PWM_BASE_HZ = 200_000_000
+PWM_MAX_HZ = 20_000_000
 
 
 def _validate_channel(channel: int) -> None:
@@ -26,8 +27,8 @@ def build_pwm_start_payload(
 ) -> bytes:
     _validate_channel(channel)
     _validate_byteorder(byteorder)
-    if not isinstance(frequency_hz, int) or not 1 <= frequency_hz <= PWM_BASE_HZ:
-        raise ProtocolError(f"frequency_hz must be an integer in range 1..{PWM_BASE_HZ}, got {frequency_hz!r}")
+    if not isinstance(frequency_hz, int) or not 1 <= frequency_hz <= PWM_MAX_HZ:
+        raise ProtocolError(f"frequency_hz must be an integer in range 1..{PWM_MAX_HZ}, got {frequency_hz!r}")
     if not isinstance(duty_percent, (int, float)):
         raise ProtocolError(f"duty_percent must be in range 0..100, got {duty_percent!r}")
     duty = float(duty_percent)

@@ -270,13 +270,13 @@ def test_cli_capture_decode_exports_per_channel_packed_samples_and_manifest(tmp_
     assert manifest["channels"]["3"]["metadata1"] == [1, 2]
 
 
-def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_header(
+def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer(
     monkeypatch, tmp_path, capsys
 ):
     import atkdl16_cli.cli as cli
 
     backend = CliFakeBackend()
-    sample_data = b"\xaa" * 12 + b"\x55" * 125
+    sample_data = b"\x55" * 125 + b"\xaa" * 12
     backend.read_chunks = [
         _capture_packet(4, b"\xff\x00\x12\x03")
         + _capture_packet(1, b"\x07\x00" + sample_data)
@@ -308,7 +308,7 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_header(
     assert (output / "channel-07.bin").read_bytes() == b"\x55" * 125
     manifest = __import__("json").loads((output / "manifest.json").read_text())
     assert manifest["channels"]["7"]["samples"] == 1000
-    assert manifest["transport_header_bytes_removed"] == 12
+    assert manifest["transport_trailer_bytes_removed"] == 12
     assert '"samples": 1000' in capsys.readouterr().out
 
 

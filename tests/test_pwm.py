@@ -1,11 +1,12 @@
 import pytest
 
 from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.pwm import PWM_BASE_HZ, build_pwm_start_payload, build_pwm_stop_payload
+from atkdl16_cli.pwm import PWM_BASE_HZ, PWM_MAX_HZ, build_pwm_start_payload, build_pwm_stop_payload
 
 
 def test_pwm_base_frequency_matches_reverse_evidence():
     assert PWM_BASE_HZ == 200_000_000
+    assert PWM_MAX_HZ == 20_000_000
 
 
 def test_pwm_start_payload_for_channel_zero_1khz_50_percent_little_endian():
@@ -24,6 +25,12 @@ def test_pwm_counts_round_half_up_like_original_application():
     assert int.from_bytes(payload[5:9], "little") == 22_000
 
 
+def test_pwm_20mhz_endpoint_uses_ten_counter_ticks():
+    payload = build_pwm_start_payload(channel=0, frequency_hz=20_000_000, duty_percent=50)
+    assert int.from_bytes(payload[1:5], "little") == 10
+    assert int.from_bytes(payload[5:9], "little") == 5
+
+
 def test_pwm_start_payload_supports_big_endian_for_verification_experiments():
     payload = build_pwm_start_payload(channel=0, frequency_hz=1_000, duty_percent=50, byteorder="big")
     assert payload == bytes.fromhex("1100030d40000186a0")
@@ -40,7 +47,7 @@ def test_pwm_rejects_invalid_channel(channel):
         build_pwm_start_payload(channel=channel, frequency_hz=1_000, duty_percent=50)
 
 
-@pytest.mark.parametrize("frequency", [0, -1, 200_000_001])
+@pytest.mark.parametrize("frequency", [0, -1, 20_000_001, 200_000_001])
 def test_pwm_rejects_invalid_frequency(frequency):
     with pytest.raises(ProtocolError, match="frequency_hz must be"):
         build_pwm_start_payload(channel=0, frequency_hz=frequency, duty_percent=50)
