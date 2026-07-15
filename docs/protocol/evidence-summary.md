@@ -299,8 +299,10 @@ Evidence source: type-1 receive path `0x102fd3..0x1033b8`.
 Live DL16 verification with flags `0xc0` confirms that online Buffer+RLE
 records are `(count, value)`. A requested 1,250,000,000-sample capture returned
 156,250,001 expanded bytes and the type-3 completion value 1,250,000,008,
-proving that RLE carries one extra packed-byte trailer. This differs from the
-12-byte trailer observed in non-RLE Buffer/Stream captures.
+proving that RLE carries one extra packed-byte trailer. Ordinary Buffer exposes
+a 12-byte trailer. The incremental Stream path on the current DL16 firmware
+instead exposed an 8-byte same-packet suffix; capture code now stops at the
+requested sample count rather than assuming one common trailer size.
 
 Live sampling-index verification maps index 6 to 20 MHz using a 1 MHz PWM
 loopback with exactly 20 samples per period. Index 7 was retried in three fresh

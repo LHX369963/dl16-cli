@@ -1,6 +1,7 @@
 # ATK DL16 Protocol Reference
 
-Status: partially implemented and still under reverse engineering.
+Status: the DL16 acquisition path is implemented and hardware-verified; fields
+that remain unknown are explicitly labelled rather than guessed.
 
 ## Supported USB IDs
 
@@ -105,6 +106,7 @@ Live sample-index probing established the rates needed for PWM verification:
 | 3 | 4 MHz |
 | 4 | 5 MHz |
 | 5 | 10 MHz |
+| 6 | 20 MHz |
 | 8 | 40 MHz |
 | 9 | 50 MHz |
 | 10 | 100 MHz |
@@ -112,8 +114,9 @@ Live sample-index probing established the rates needed for PWM verification:
 | 12 | 250 MHz |
 | 0 | 500 MHz |
 
-Indexes 6 and 7 remain deliberately undocumented until separately measured
-with a suitable reference frequency.
+Index 6 was measured with a 1 MHz PWM loopback at exactly 20 samples per
+period. Index 7 returned no type-1 sample packets in three fresh DL16 attempts
+and is deliberately excluded from automatic selection.
 
 ## PWM stop payload
 
@@ -142,6 +145,10 @@ The hardware backend exposes the tested command builders plus independent bulk-I
 - `atkdl16 trigger serial --file ...`
 - `atkdl16 capture read --packets N --output wire.bin`
 - `atkdl16 capture run ... --output-dir capture`
+- `atkdl16 capture stream ... --output-dir capture`
+- `atkdl16 capture export ...`
+- `atkdl16 capture uart|i2c|spi ...`
+- `atkdl16 session [--commands commands.jsonl]`
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
@@ -167,11 +174,9 @@ atkdl16 --timeout-ms 2000 capture run \
 ```
 
 The output directory contains the logical packet stream (`wire.bin`), packed
-LSB-first samples (`channel-07.bin`), and `manifest.json`. The implementation
-removes the confirmed 12-byte first-channel transport trailer and stops after
-the requested sample depth. This command currently supports one input channel
-per invocation while the multi-channel prefix/offset behavior is still being
-recovered.
+LSB-first samples (`channel-07.bin`), and `manifest.json`. Type-1 packets may be
+interleaved; the implementation tracks up to 16 requested channels
+independently and removes each channel's completion suffix.
 
 Firmware frame planning is available offline. Hardware flashing is exposed only behind the explicit `--i-understand-this-can-brick` guard and should be used only after entering the bootloader and confirming the correct transport mode.
 
@@ -356,6 +361,11 @@ tracks each channel independently and stops only after every requested channel
 has reached the configured sample depth plus its transport trailer. Existing
 single-channel scripts remain compatible through `--channel N`.
 
+Live ordinary Buffer pressure runs completed at 250 MHz with 4, 8, and 16
+channels. Each channel returned 20,000 samples; CH6 decoded the connected
+1 MHz/75% PWM, CH7 decoded 2 MHz/25%, and the unconnected channels remained
+static as expected.
+
 Buffer hardware RLE can be enabled for one or more channels:
 
 ```bash
@@ -371,6 +381,19 @@ tracked using expanded per-channel lengths and the type-6 hardware completion
 packet. If compressed memory fills before the requested depth, the shorter
 valid result is retained and reported by `capture_shortened_by_hardware`.
 
+Multi-channel RLE pressure runs requested 1.05 billion aggregate samples in
+each configuration. The 4/8/16-channel runs each expanded to 131.25 MB of
+packed samples while transferring approximately 24.84/12.41/6.72 MB on the
+wire. The connected PWM channels decoded correctly in every run.
+
+For long Stream captures, `capture stream` writes channel bodies directly to
+disk. Omitting `--duration` selects the largest 40-bit depth and Ctrl-C causes
+the receiver to truncate every channel to the shortest common complete-byte
+count before writing the manifest. A live interrupted 20 MHz, two-channel run
+retained 52,230,528 aligned samples per channel. The DL16 Stream completion
+suffix observed in this path is 8 bytes; the receiver derives and reports the
+same-packet suffix instead of assuming the Buffer value.
+
 ## Packed samples and hardware RLE
 
 For type-1 packets, the body is a sequence of packed sample bytes. Each byte contains eight chronological samples, least-significant bit first.
@@ -385,9 +408,29 @@ byte 1: packed sample value
 The original receiver expands each packed value `repeat count` times into a 512 KiB packet buffer. The implementation enforces the same per-packet output limit.
 
 Ordinary Buffer packets expose 12 extra expanded bytes after the requested
-samples. RLE packets expose one extra expanded packed byte instead; the online
-receiver removes the appropriate mode-specific trailer independently for every
-channel.
+samples. RLE packets expose one extra expanded packed byte. Incremental Stream
+on the current DL16 firmware exposed an 8-byte suffix. Receivers stop at the
+requested sample count and remove/report the mode-specific suffix independently
+for every channel.
+
+## Export, persistent sessions, and software protocol decode
+
+Decoded capture directories can be exported to full-sample CSV, transition-only
+CSV, or 1 ns-timescale VCD. The exporter memory-maps channel files and emits
+rows incrementally. A 20,000-sample, 16-channel acceptance capture exported in
+0.10 s (CSV) and 0.07 s (edges/VCD), with about 15 MB maximum RSS on the test
+host.
+
+`atkdl16 session` is a JSON-lines command loop that performs link recovery once
+and then accepts PWM and Stream operations over the same `AtkDevice`. This is
+required when a loopback test must preserve both PWM generators across capture
+configuration. A live 100 MHz session measured PWM0 on CH7 at 1 MHz/75% and
+PWM1 on CH6 at 2 MHz/24% (finite sample quantization around the requested 25%).
+
+Offline UART, I2C, and SPI decoders consume the packed LSB-first files and emit
+JSON. UART supports 5..9 data bits, parity, 1/2 stop bits, and inversion; I2C
+reports address/direction/data/ACK; SPI supports modes 0..3, MSB/LSB, arbitrary
+1..32-bit words, optional MOSI/MISO, and optional active-low CS.
 
 Decode a saved stream into one packed file per channel:
 
