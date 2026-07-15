@@ -215,7 +215,7 @@ atkdl16 --dry-run capture configure \
 Payload layout:
 
 ```text
-0      flags: 0x80 RLE, 0x40 Buffer
+0      flags: 0x80 Buffer, 0x40 RLE
 1      threshold in 0.1 V sign-magnitude form
 2      sampling index
 3..7   sample depth, unsigned 40-bit little-endian
@@ -323,8 +323,8 @@ For type-1 packets, the body is a sequence of packed sample bytes. Each byte con
 When `isRLE` is enabled, the body is instead a sequence of two-byte records:
 
 ```text
-byte 0: packed sample value
-byte 1: repeat count
+byte 0: repeat count
+byte 1: packed sample value
 ```
 
 The original receiver expands each packed value `repeat count` times into a 512 KiB packet buffer. The implementation enforces the same per-packet output limit.

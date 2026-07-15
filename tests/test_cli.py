@@ -146,7 +146,7 @@ def test_cli_capture_configure_dry_run_prints_recovered_payload(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "PARAMETER_SETTING" in out
-    assert "110e808c03" in out
+    assert "110e408c03" in out
     assert (1_000_000).to_bytes(5, "little").hex() in out
     assert (250_000).to_bytes(5, "little").hex() in out
 
@@ -252,8 +252,8 @@ def test_cli_capture_read_reports_end_of_stream_before_requested_count(
 def test_cli_capture_decode_exports_per_channel_packed_samples_and_manifest(tmp_path):
     source = tmp_path / "wire.bin"
     source.write_bytes(
-        _capture_packet(1, b"\x03\x01\x81\x02")
-        + _capture_packet(1, b"\x03\x02\x00\x01")
+        _capture_packet(1, b"\x03\x01\x02\x81")
+        + _capture_packet(1, b"\x03\x02\x01\x00")
         + _capture_packet(4, b"\x15\x00")
     )
     output = tmp_path / "decoded"
@@ -310,6 +310,27 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer
     assert manifest["channels"]["7"]["samples"] == 1000
     assert manifest["transport_trailer_bytes_removed"] == 12
     assert '"samples": 1000' in capsys.readouterr().out
+
+
+def test_cli_capture_run_buffer_sets_original_buffer_bit(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    rc = cli.main([
+        "capture", "run", "--buffer", "--channel", "6", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--sample-index", "1", "--output-dir", str(tmp_path / "buffer"),
+    ])
+    assert rc == 0
+    # Transport header is 9 bytes; command/length occupy bytes 9..10 and
+    # parameter payload starts at byte 11.
+    assert backend.sent_frames[0][11] == 0x80
 
 
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):

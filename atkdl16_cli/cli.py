@@ -91,6 +91,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
     run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
     run_capture.add_argument("--sample-index", type=int, required=True, help="original sampling-rate index")
+    run_capture.add_argument("--buffer", action="store_true", help="use hardware Buffer acquisition mode")
     run_capture.add_argument("--output-dir", required=True)
     run_capture.add_argument("--read-size", type=int, default=16384)
 
@@ -333,6 +334,7 @@ def _run_single_channel_capture(
         )
     manifest = {
         "bit_order": "lsb-first",
+        "mode": "buffer" if params.is_buffer else "stream",
         "sample_rate_hz": params.set_hz,
         "sample_depth": depth,
         "transport_trailer_bytes_removed": 12,
@@ -565,6 +567,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trigger_position_percent=args.trigger_position,
                 threshold_level=args.threshold,
                 sample_index=args.sample_index,
+                is_buffer=args.buffer,
                 collect_type=1,
             )
             manifest = _run_single_channel_capture(

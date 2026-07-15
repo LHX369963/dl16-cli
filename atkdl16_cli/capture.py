@@ -75,13 +75,13 @@ class Dl16StreamParser:
 
 
 def decode_rle_pairs(data: bytes, *, output_limit: int = _DL16_RLE_PACKET_OUTPUT_LIMIT) -> bytes:
-    """Expand the original application's `(packed_value, repeat_count)` byte pairs."""
+    """Expand the original application's `(repeat_count, packed_value)` byte pairs."""
 
     if len(data) % 2:
-        raise ProtocolError("DL16 RLE body must contain complete value/count pairs")
+        raise ProtocolError("DL16 RLE body must contain complete count/value pairs")
     output = bytearray()
     for offset in range(0, len(data), 2):
-        value, count = data[offset : offset + 2]
+        count, value = data[offset : offset + 2]
         if len(output) + count > output_limit:
             raise ProtocolError(f"DL16 RLE output exceeds original {output_limit}-byte packet buffer")
         output.extend(bytes((value,)) * count)
@@ -190,7 +190,11 @@ def build_parameter_setting_payload(params: SamplingParameters) -> bytes:
     if params.collect_type == 3 and (params.is_rle or params.is_buffer):
         raise ProtocolError("stream collect type 3 cannot be combined with RLE or Buffer")
 
-    flags = (0x80 if params.is_rle else 0) + (0x40 if params.is_buffer else 0)
+    # SessionController::start sets bit 7 from settingData.isBuffer and then
+    # adds bit 6 when settingData.isRLE is true (0xc2e66..0xc2e74,
+    # 0xc3748).  Keeping these separate matters: swapping them makes a Buffer
+    # acquisition return RLE records which a non-RLE receiver misdecodes.
+    flags = (0x80 if params.is_buffer else 0) + (0x40 if params.is_rle else 0)
     frequency_khz = int(params.set_hz) // 1_000
     depth = int(params.set_time * frequency_khz)
     trigger_sample = int((depth // 100) * params.trigger_position_percent)

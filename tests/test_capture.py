@@ -26,7 +26,7 @@ def test_parameter_payload_layout_matches_recovered_binary_formula():
     # depth = 10 * (100_000_000 // 1000) = 1_000_000
     # trigger = (1_000_000 // 100) * 25 = 250_000
     assert build_parameter_setting_payload(params) == (
-        bytes.fromhex("808c03")
+        bytes.fromhex("408c03")
         + (1_000_000).to_bytes(5, "little")
         + (250_000).to_bytes(5, "little")
     )
@@ -35,6 +35,13 @@ def test_parameter_payload_layout_matches_recovered_binary_formula():
 def test_parameter_flags_combine_rle_and_buffer():
     params = SamplingParameters(1, 1_000, 0, 0, 0, True, True, 1)
     assert build_parameter_setting_payload(params)[0] == 0xC0
+
+
+def test_parameter_flags_match_original_buffer_and_rle_bits_individually():
+    buffer_only = SamplingParameters(1, 1_000, 0, 0, 0, False, True, 1)
+    rle_only = SamplingParameters(1, 1_000, 0, 0, 0, True, False, 1)
+    assert build_parameter_setting_payload(buffer_only)[0] == 0x80
+    assert build_parameter_setting_payload(rle_only)[0] == 0x40
 
 
 @pytest.mark.parametrize(
@@ -122,12 +129,12 @@ def test_packet_short_payload_exposes_missing_metadata_without_guessing():
     assert packet.body == b""
 
 
-def test_recovered_rle_decoder_expands_value_count_pairs():
-    assert decode_rle_pairs(bytes.fromhex("a5030002")) == bytes.fromhex("a5a5a50000")
+def test_recovered_rle_decoder_expands_count_value_pairs():
+    assert decode_rle_pairs(bytes.fromhex("03a50200")) == bytes.fromhex("a5a5a50000")
 
 
 def test_recovered_rle_decoder_rejects_odd_input_and_original_buffer_overflow():
-    with pytest.raises(ProtocolError, match="value/count pairs"):
+    with pytest.raises(ProtocolError, match="count/value pairs"):
         decode_rle_pairs(b"\xaa")
     with pytest.raises(ProtocolError, match="524288"):
         decode_rle_pairs(b"\xff\xff" * 2057)
@@ -138,7 +145,7 @@ def test_sample_bits_are_chronological_lsb_first():
 
 
 def test_channel_packet_decoder_uses_metadata0_as_channel_and_expands_rle():
-    packet = Dl16StreamParser().feed(dl16_packet(1, b"\x03\x09\x81\x02"))[0]
+    packet = Dl16StreamParser().feed(dl16_packet(1, b"\x03\x09\x02\x81"))[0]
     block = decode_channel_packet(packet, is_rle=True)
     assert block.channel == 3
     assert block.metadata1 == 9

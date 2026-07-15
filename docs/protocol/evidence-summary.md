@@ -179,7 +179,7 @@ The first `QByteArray` passed to `Session::OrderStart` is built as a fixed 13-by
 
 | Offset | Size | Meaning | Evidence |
 |---:|---:|---|---|
-| 0 | 1 | flags: bit 7 `isRLE`, bit 6 `isBuffer` | append at `0xc2ea7`; flag branches `0xc2e66..0xc2e92`, `0xc3748` |
+| 0 | 1 | flags: bit 7 `isBuffer`, bit 6 `isRLE` | append at `0xc2ea7`; flag branches `0xc2e66..0xc2e92`, `0xc3748` |
 | 1 | 1 | threshold sign-magnitude, magnitude is threshold volts × 10 rounded to nearest integer, bit 7 is negative | append at `0xc3047`; factor 10.0 at `0x1f291f0` |
 | 2 | 1 | `settingData.index` | append at `0xc308b` |
 | 3 | 5 | sample depth, unsigned little-endian | `intToBytes(..., 5)` at `0xc3392` |
@@ -285,7 +285,7 @@ Evidence source: type-1 receive path `0x102fd3..0x1033b8`.
 
 - Payload metadata byte 0 is passed as the channel argument to `Segment::SetSampleBlock`.
 - With `isRLE == false`, the body is passed directly and its byte length is accumulated per channel.
-- With `isRLE == true`, `0x103223..0x1032f1` requires an even body length and expands repeated `(value, count)` byte pairs into a `0x80000`-byte temporary buffer.
+- With `isRLE == true`, `0x103223..0x1032f1` requires an even body length and expands repeated `(count, value)` byte pairs into a `0x80000`-byte temporary buffer.
 - The expanded or direct bytes are then handled identically.
 
 `Segment::GetSample` at `0xd7f80` computes `sample_index >> 3`, loads the packed byte, shifts it right by `sample_index & 7`, and masks bit 0. Therefore each packed byte contains eight chronological samples in LSB-first order.
