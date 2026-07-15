@@ -435,6 +435,33 @@ def test_cli_capture_run_rejects_rle_without_buffer(capsys, tmp_path):
     assert "requires --buffer" in capsys.readouterr().err
 
 
+def test_cli_capture_run_automatically_selects_sample_index(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [_capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    rc = cli.main([
+        "capture", "run", "--channel", "6", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--output-dir", str(tmp_path),
+    ])
+    assert rc == 0
+    assert backend.sent_frames[0][13] == 1
+
+
+def test_cli_capture_run_rejects_stream_channel_limit_before_usb(capsys, tmp_path):
+    rc = main([
+        "capture", "run", "--channels", "0,1,2,3,4,5,6", "--set-time", "1",
+        "--set-hz", "50000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    assert "at most 6 channels" in capsys.readouterr().err
+
+
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):
     firmware = tmp_path / "fw.bin"
     firmware.write_bytes(b"x" * 257)

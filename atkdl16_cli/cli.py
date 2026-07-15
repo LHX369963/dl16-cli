@@ -27,6 +27,7 @@ from .firmware import (
     flash_firmware,
 )
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
+from .sampling import resolve_sample_index, validate_capture_combination
 from .trigger import SerialTriggerConfig, StageCondition, TriggerState, parse_trigger_states
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
@@ -89,10 +90,16 @@ def _build_parser() -> argparse.ArgumentParser:
     channel_selection.add_argument("--channel", type=int, help="single input channel, 0..15")
     channel_selection.add_argument("--channels", help="comma-separated input channels, for example 0,3,6")
     run_capture.add_argument("--set-time", type=float, required=True, help="capture time in milliseconds")
-    run_capture.add_argument("--set-hz", type=int, required=True, help="sampling frequency in Hz")
+    run_capture.add_argument(
+        "--set-hz", "--sample-rate", dest="set_hz", type=int, required=True,
+        help="sampling frequency in Hz; the hardware index is selected automatically",
+    )
     run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
     run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
-    run_capture.add_argument("--sample-index", type=int, required=True, help="original sampling-rate index")
+    run_capture.add_argument(
+        "--sample-index", type=int, default=None,
+        help="optional recovered index assertion; normally selected automatically",
+    )
     run_capture.add_argument("--buffer", action="store_true", help="use hardware Buffer acquisition mode")
     run_capture.add_argument("--rle", action="store_true", help="enable Buffer hardware RLE compression")
     run_capture.add_argument("--output-dir", required=True)
@@ -396,6 +403,7 @@ def _run_multi_channel_capture(
         "mode": "buffer" if params.is_buffer else "stream",
         "rle": params.is_rle,
         "sample_rate_hz": params.set_hz,
+        "sample_index": params.sample_index,
         "requested_sample_depth": depth,
         "sample_depth": actual_depth,
         "capture_shortened_by_hardware": shortened,
@@ -488,10 +496,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         run_channels: list[int] | None = None
+        run_sample_index: int | None = None
         if args.command == "capture" and args.capture_command == "run":
             run_channels = _parse_capture_channels(args.channel, args.channels)
             if args.rle and not args.buffer:
                 raise AtkDl16Error("capture run --rle requires --buffer")
+            run_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
+            validate_capture_combination(args.set_hz, len(run_channels), is_buffer=args.buffer)
         if args.command == "capture":
             if args.capture_command == "parse":
                 for index, packet in enumerate(_parse_capture_file(args.input)):
@@ -656,12 +667,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 set_hz=args.set_hz,
                 trigger_position_percent=args.trigger_position,
                 threshold_level=args.threshold,
-                sample_index=args.sample_index,
+                sample_index=run_sample_index,
                 is_rle=args.rle,
                 is_buffer=args.buffer,
                 collect_type=1,
             )
             assert run_channels is not None
+            assert run_sample_index is not None
             manifest = _run_multi_channel_capture(
                 device,
                 backend,

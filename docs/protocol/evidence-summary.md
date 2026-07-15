@@ -294,6 +294,11 @@ records are `(count, value)`. A requested 1,250,000,000-sample capture returned
 proving that RLE carries one extra packed-byte trailer. This differs from the
 12-byte trailer observed in non-RLE Buffer/Stream captures.
 
+Live sampling-index verification maps index 6 to 20 MHz using a 1 MHz PWM
+loopback with exactly 20 samples per period. Index 7 was retried in three fresh
+captures and returned no type-1 sample packets, so the DL16 automatic rate
+table omits it instead of assuming a 25/30 MHz meaning from another model.
+
 `Segment::GetSample` at `0xd7f80` computes `sample_index >> 3`, loads the packed byte, shifts it right by `sample_index & 7`, and masks bit 0. Therefore each packed byte contains eight chronological samples in LSB-first order.
 
 `Segment::CheckCompress` is not the USB hardware RLE decoder. It checks 64-bit words for all-zero or all-one blocks and is used by internal `Segment` storage compression.
