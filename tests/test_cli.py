@@ -1,3 +1,5 @@
+import pytest
+
 from atkdl16_cli.cli import main
 
 
@@ -171,7 +173,7 @@ def test_cli_trigger_simple_dry_run(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "SIMPLE_TRIGGER" in out
-    assert "1204140000" in out
+    assert "12049c0000" in out
 
 
 def test_cli_trigger_stage_json_dry_run(tmp_path, capsys):
@@ -181,7 +183,7 @@ def test_cli_trigger_stage_json_dry_run(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "STAGE_TRIGGER" in out
-    assert "1307010234124014" in out
+    assert "130701023412409c" in out
 
 
 def test_cli_trigger_serial_json_dry_run(tmp_path, capsys):
@@ -191,7 +193,7 @@ def test_cli_trigger_serial_json_dry_run(tmp_path, capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "SERIAL_TRIGGER" in out
-    assert "140b03083412040100140020" in out
+    assert "140b030834120401009c00a8" in out
 
 
 def _capture_packet(packet_type, payload):
@@ -303,7 +305,7 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer
     assert len(backend.sent_frames) == 3
     assert backend.sent_frames[0][9:11] == b"\x11\x0e"
     assert backend.sent_frames[1][9:11] == b"\x12\x0b"
-    assert backend.sent_frames[1][11:21] == bytes.fromhex("0000000f000000000000")
+    assert backend.sent_frames[1][11:21] == bytes.fromhex("7777777f777777770000")
     assert backend.sent_frames[2][9:11] == b"\x15\x01"
     assert (output / "channel-07.bin").read_bytes() == b"\x55" * 125
     manifest = __import__("json").loads((output / "manifest.json").read_text())
@@ -355,7 +357,7 @@ def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp
         "--sample-index", "1", "--output-dir", str(output),
     ])
     assert rc == 0
-    assert backend.sent_frames[1][11:21] == bytes.fromhex("000000ff000000000000")
+    assert backend.sent_frames[1][11:21] == bytes.fromhex("777777ff777777770000")
     assert (output / "channel-06.bin").read_bytes() == b"\x66" * 125
     assert (output / "channel-07.bin").read_bytes() == b"\x77" * 125
     manifest = __import__("json").loads((output / "manifest.json").read_text())
@@ -460,6 +462,39 @@ def test_cli_capture_run_rejects_stream_channel_limit_before_usb(capsys, tmp_pat
     ])
     assert rc == 1
     assert "at most 6 channels" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("edge", "trigger_byte"), [("rising", 0x97), ("falling", 0xA7)]
+)
+def test_cli_capture_run_sends_edge_trigger(monkeypatch, tmp_path, edge, trigger_byte):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [_capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / edge
+    rc = cli.main([
+        "capture", "run", "--channel", "6", "--trigger", edge,
+        "--trigger-channel", "6", "--set-time", "1", "--sample-rate", "1000000",
+        "--trigger-position", "50", "--threshold", "1.2", "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert backend.sent_frames[1][11:21] == bytes((0x77, 0x77, 0x77, trigger_byte, 0x77, 0x77, 0x77, 0x77, 0, 0))
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["trigger"] == {"channel": 6, "edge": edge, "position_percent": 50.0}
+
+
+def test_cli_capture_run_rejects_trigger_channel_that_is_not_captured(capsys, tmp_path):
+    rc = main([
+        "capture", "run", "--channel", "6", "--trigger", "rising", "--trigger-channel", "7",
+        "--set-time", "1", "--sample-rate", "1000000", "--trigger-position", "50",
+        "--threshold", "1.2", "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    assert "must be one of the captured channels" in capsys.readouterr().err
 
 
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):

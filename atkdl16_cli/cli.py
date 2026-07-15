@@ -95,6 +95,14 @@ def _build_parser() -> argparse.ArgumentParser:
         help="sampling frequency in Hz; the hardware index is selected automatically",
     )
     run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
+    run_capture.add_argument(
+        "--trigger", choices=("none", "rising", "falling"), default="none",
+        help="optional simple edge trigger",
+    )
+    run_capture.add_argument(
+        "--trigger-channel", type=int, default=None,
+        help="edge-trigger channel; defaults to the first captured channel",
+    )
     run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
     run_capture.add_argument(
         "--sample-index", type=int, default=None,
@@ -304,6 +312,8 @@ def _run_multi_channel_capture(
     params: SamplingParameters,
     *,
     channels: Sequence[int],
+    trigger_state: TriggerState = TriggerState.NULL,
+    trigger_channel: int | None = None,
     output_dir: str,
     read_size: int,
 ) -> dict:
@@ -314,6 +324,11 @@ def _run_multi_channel_capture(
         raise AtkDl16Error("duplicate channel in capture channel list")
     if any(not 0 <= channel <= 15 for channel in channels):
         raise AtkDl16Error("capture channels must be in range 0..15")
+    if trigger_state != TriggerState.NULL:
+        if trigger_channel is None:
+            trigger_channel = channels[0]
+        if trigger_channel not in channels:
+            raise AtkDl16Error("trigger channel must be one of the captured channels")
     if read_size <= 0 or read_size % 2048:
         raise AtkDl16Error("capture run read-size must be a positive multiple of 2048")
 
@@ -331,6 +346,9 @@ def _run_multi_channel_capture(
 
     device.initialize_connection()
     states = [TriggerState.NULL] * 16
+    if trigger_state != TriggerState.NULL:
+        assert trigger_channel is not None
+        states[trigger_channel] = trigger_state
     enabled = [False] * 16
     for channel in channels:
         enabled[channel] = True
@@ -409,6 +427,11 @@ def _run_multi_channel_capture(
         "capture_shortened_by_hardware": shortened,
         "transport_trailer_bytes_removed": trailer_bytes,
         "requested_channels": channels,
+        "trigger": {
+            "edge": trigger_state.name.lower(),
+            "channel": trigger_channel,
+            "position_percent": params.trigger_position_percent,
+        },
         "channels": {
             str(channel): {
                 "file": f"channel-{channel:02d}.bin",
@@ -445,6 +468,8 @@ def _run_single_channel_capture(
         backend,
         params,
         channels=[channel],
+        trigger_state=TriggerState.NULL,
+        trigger_channel=None,
         output_dir=output_dir,
         read_size=read_size,
     )
@@ -497,12 +522,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         run_channels: list[int] | None = None
         run_sample_index: int | None = None
+        run_trigger_state = TriggerState.NULL
+        run_trigger_channel: int | None = None
         if args.command == "capture" and args.capture_command == "run":
             run_channels = _parse_capture_channels(args.channel, args.channels)
             if args.rle and not args.buffer:
                 raise AtkDl16Error("capture run --rle requires --buffer")
             run_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
             validate_capture_combination(args.set_hz, len(run_channels), is_buffer=args.buffer)
+            if args.trigger == "rising":
+                run_trigger_state = TriggerState.RISING
+            elif args.trigger == "falling":
+                run_trigger_state = TriggerState.FALLING
+            run_trigger_channel = args.trigger_channel
+            if run_trigger_state != TriggerState.NULL:
+                run_trigger_channel = run_trigger_channel if run_trigger_channel is not None else run_channels[0]
+                if run_trigger_channel not in run_channels:
+                    raise AtkDl16Error("trigger channel must be one of the captured channels")
+            elif run_trigger_channel is not None:
+                raise AtkDl16Error("--trigger-channel requires --trigger rising or falling")
         if args.command == "capture":
             if args.capture_command == "parse":
                 for index, packet in enumerate(_parse_capture_file(args.input)):
@@ -679,6 +717,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 backend,
                 params,
                 channels=run_channels,
+                trigger_state=run_trigger_state,
+                trigger_channel=run_trigger_channel,
                 output_dir=args.output_dir,
                 read_size=args.read_size,
             )

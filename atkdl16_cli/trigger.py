@@ -69,15 +69,17 @@ def pack_trigger_states(
         raise ProtocolError("enabled mask length must match trigger state count")
     if not states:
         raise ProtocolError("at least one trigger state is required")
+    if null_nibble != 0x7:
+        raise ProtocolError("DL16 trigger don't-care code must be 0x7")
 
     output = bytearray(channel_offset // 2)
     for index in range(0, len(states), 2):
         high_state = TriggerState(states[index])
-        high = (null_nibble if high_state == TriggerState.NULL else _NIBBLE[high_state]) if enabled[index] else 0
+        high = _NIBBLE[high_state] | (0x8 if enabled[index] else 0)
         low = 0
         if index + 1 < len(states):
             low_state = TriggerState(states[index + 1])
-            low = (null_nibble if low_state == TriggerState.NULL else _NIBBLE[low_state]) if enabled[index + 1] else 0
+            low = _NIBBLE[low_state] | (0x8 if enabled[index + 1] else 0)
         output.append((high << 4) | low)
     return bytes(output)
 
@@ -92,7 +94,7 @@ def build_simple_trigger_payload(
     if not 0 <= collect_type <= 0xFF:
         raise ProtocolError(f"collect_type must fit in one byte, got {collect_type}")
     return pack_trigger_states(
-        states, enabled=enabled, channel_offset=channel_offset, null_nibble=0xF
+        states, enabled=enabled, channel_offset=channel_offset
     ) + bytes(
         (1 if collect_type == 2 else 0, 1 if collect_type == 3 else 0)
     )

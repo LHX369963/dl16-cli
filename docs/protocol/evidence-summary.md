@@ -214,7 +214,11 @@ The jump table at `0x1f29800` maps original `triggerType` values 0..5 to these e
 | 4 | low | `0x0` |
 | 5 | double edge | `0x3` |
 
-The first channel of each pair occupies the high nibble. Disabled channels contribute zero. `triggerStringToByte` uses the same mapping for characters `R`, `1`, `F`, `0`, `C`, and default/X.
+The first channel of each pair occupies the high nibble. `triggerStringToByte`
+sets bit 3 of each nibble when that channel is enabled, then adds the condition
+code. Thus enabled rising/falling are `0x9`/`0xa`, enabled don't-care is `0xf`,
+and disabled don't-care is `0x7`. Live edge-trigger tests fail with the old
+code-only `0x1`/`0x2` representation and succeed with the enable bit present.
 
 ### Simple trigger
 
@@ -225,6 +229,10 @@ packed channel bytes
 byte: 1 when collectType == 2, otherwise 0
 byte: 1 when collectType == 3, otherwise 0
 ```
+
+Live Buffer captures with a continuous 1 MHz PWM on CH6 verified both simple
+edge modes at a 50% trigger position: rising appeared at sample 49,975 of
+100,000 and falling at sample 49,994 of 100,000.
 
 ### Stage trigger
 

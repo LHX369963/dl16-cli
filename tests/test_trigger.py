@@ -12,16 +12,16 @@ def test_trigger_state_nibble_map_matches_jump_table():
         TriggerState.FALLING,
         TriggerState.LOW,
         TriggerState.DOUBLE,
-    ]) == bytes.fromhex("714203")
+    ]) == bytes.fromhex("f9ca8b")
 
 
-def test_first_channel_is_high_nibble_and_disabled_channel_contributes_zero():
-    assert pack_trigger_states([TriggerState.RISING, TriggerState.HIGH]) == b"\x14"
-    assert pack_trigger_states([TriggerState.NULL, TriggerState.RISING], enabled=[False, True]) == b"\x01"
+def test_first_channel_is_high_nibble_and_enable_bit_is_preserved():
+    assert pack_trigger_states([TriggerState.RISING, TriggerState.HIGH]) == b"\x9c"
+    assert pack_trigger_states([TriggerState.NULL, TriggerState.RISING], enabled=[False, True]) == b"\x79"
 
 
 def test_channel_offset_is_zero_byte_padding_and_odd_channel_is_padded_low():
-    assert pack_trigger_states([TriggerState.RISING], channel_offset=2) == bytes.fromhex("0010")
+    assert pack_trigger_states([TriggerState.RISING], channel_offset=2) == bytes.fromhex("0090")
 
 
 def test_parse_trigger_states_accepts_names_case_insensitively():
@@ -37,9 +37,9 @@ def test_parse_trigger_states_accepts_names_case_insensitively():
 
 def test_simple_trigger_appends_collect_type_flags():
     states = [TriggerState.RISING, TriggerState.HIGH]
-    assert build_simple_trigger_payload(states, collect_type=1) == bytes.fromhex("140000")
-    assert build_simple_trigger_payload(states, collect_type=2) == bytes.fromhex("140100")
-    assert build_simple_trigger_payload(states, collect_type=3) == bytes.fromhex("140001")
+    assert build_simple_trigger_payload(states, collect_type=1) == bytes.fromhex("9c0000")
+    assert build_simple_trigger_payload(states, collect_type=2) == bytes.fromhex("9c0100")
+    assert build_simple_trigger_payload(states, collect_type=3) == bytes.fromhex("9c0001")
 
 
 def test_simple_trigger_uses_f_for_enabled_dont_care_channel_seen_on_dl16():
@@ -47,7 +47,7 @@ def test_simple_trigger_uses_f_for_enabled_dont_care_channel_seen_on_dl16():
     enabled = [False] * 16
     enabled[7] = True
     assert build_simple_trigger_payload(states, enabled=enabled, collect_type=0) == bytes.fromhex(
-        "0000000f000000000000"
+        "7777777f777777770000"
     )
 
 
@@ -65,8 +65,8 @@ def test_stage_trigger_payload_matches_recovered_layout():
         StageCondition([TriggerState.FALLING, TriggerState.LOW], counter=1, contiguous=True),
     ]
     assert build_stage_trigger_payload(stages, trigger_level=2) == bytes.fromhex(
-        "010234124014"  # stage 1, level, counter LE, non-contiguous flag, states
-        "020201000020"  # stage 2
+        "01023412409c"  # stage 1, level, counter LE, non-contiguous flag, states
+        "0202010000a8"  # stage 2
     )
 
 
@@ -79,7 +79,7 @@ def test_stage_trigger_applies_enabled_mask_and_channel_offset():
         enabled=[False, True],
         channel_offset=2,
     )
-    assert payload == bytes.fromhex("01010000000001")
+    assert payload == bytes.fromhex("01010000000079")
 
 
 def test_serial_trigger_payload_matches_recovered_layout():
@@ -95,7 +95,7 @@ def test_serial_trigger_payload_matches_recovered_layout():
         stop_states=[TriggerState.FALLING, TriggerState.LOW],
         channel_offset=2,
     )
-    assert build_serial_trigger_payload(config) == bytes.fromhex("03083412040100140020")
+    assert build_serial_trigger_payload(config) == bytes.fromhex("030834120401009c00a8")
 
 
 @pytest.mark.parametrize(

@@ -251,6 +251,19 @@ atkdl16 --dry-run trigger simple \
 
 State names: `null`, `rising`, `high`, `falling`, `low`, `double`. Aliases `X`, `R`, `1`, `F`, `0`, and `C` are also accepted.
 
+One-shot acquisition directly supports rising and falling edges. The trigger
+channel defaults to the first captured channel and must be included in the
+capture set:
+
+```bash
+atkdl16 capture run --buffer --channels 6,7 \
+  --sample-rate 100000000 --set-time 1 \
+  --trigger rising --trigger-channel 6 --trigger-position 50 \
+  --threshold 1.2 --output-dir triggered
+```
+
+The manifest records the edge, channel, and requested trigger position.
+
 Stage and serial trigger commands consume JSON:
 
 ```bash
