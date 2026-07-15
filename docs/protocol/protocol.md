@@ -89,6 +89,13 @@ range. Raw artifacts and machine-readable results are under
 `reverse/pwm-matrix/`, `reverse/pwm-high-range/`, and
 `reverse/pwm-1hz-snapshots/` outside the source tree.
 
+PWM1 was subsequently wired to CH6 and independently verified: a channel scan
+located the signal only on CH6, the 100 Hz..100 kHz representative matrix
+passed 12/12, the 500 kHz..20 MHz matrix passed 21/21, and repeated short
+captures measured the 1 Hz endpoint at 0.999901 Hz. Those artifacts are stored
+under `reverse/pwm1-channel-scan/`, `reverse/pwm1-mid-range/`,
+`reverse/pwm1-high-range/`, and `reverse/pwm1-1hz-snapshots/`.
+
 Live sample-index probing established the rates needed for PWM verification:
 
 | Sample index | Observed sample rate |
