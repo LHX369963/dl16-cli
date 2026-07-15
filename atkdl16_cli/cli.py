@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from pathlib import Path
@@ -29,6 +30,7 @@ from .firmware import (
 )
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .sampling import resolve_sample_index, validate_capture_combination
+from .streaming import stream_capture_to_disk
 from .trigger import SerialTriggerConfig, StageCondition, TriggerState, parse_trigger_states
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
@@ -117,6 +119,24 @@ def _build_parser() -> argparse.ArgumentParser:
     run_capture.add_argument("--rle", action="store_true", help="enable Buffer hardware RLE compression")
     run_capture.add_argument("--output-dir", required=True)
     run_capture.add_argument("--read-size", type=int, default=16384)
+    stream_capture = capture_sub.add_parser(
+        "stream", help="capture Stream mode incrementally to disk; Ctrl-C retains synchronized data"
+    )
+    stream_selection = stream_capture.add_mutually_exclusive_group(required=True)
+    stream_selection.add_argument("--channel", type=int, help="single input channel, 0..15")
+    stream_selection.add_argument("--channels", help="comma-separated input channels")
+    stream_capture.add_argument(
+        "--duration", type=float, default=None,
+        help="capture duration in seconds; omit to run until Ctrl-C or the 40-bit depth limit",
+    )
+    stream_capture.add_argument(
+        "--set-hz", "--sample-rate", dest="set_hz", type=int, required=True,
+        help="sampling frequency in Hz",
+    )
+    stream_capture.add_argument("--threshold", type=float, default=1.2, help="threshold level in volts")
+    stream_capture.add_argument("--sample-index", type=int, default=None)
+    stream_capture.add_argument("--output-dir", required=True)
+    stream_capture.add_argument("--read-size", type=int, default=16384)
 
     trigger = sub.add_parser("trigger", help="configure recovered trigger modes")
     trigger_sub = trigger.add_subparsers(dest="trigger_command", required=True)
@@ -529,6 +549,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         run_sample_index: int | None = None
         run_trigger_state = TriggerState.NULL
         run_trigger_channel: int | None = None
+        stream_channels: list[int] | None = None
+        stream_sample_index: int | None = None
+        stream_set_time: float | None = None
         if args.command == "capture" and args.capture_command == "run":
             run_channels = _parse_capture_channels(args.channel, args.channels)
             if args.rle and not args.buffer:
@@ -546,6 +569,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                     raise AtkDl16Error("trigger channel must be one of the captured channels")
             elif run_trigger_channel is not None:
                 raise AtkDl16Error("--trigger-channel requires --trigger rising or falling")
+        if args.command == "capture" and args.capture_command == "stream":
+            stream_channels = _parse_capture_channels(args.channel, args.channels)
+            stream_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
+            validate_capture_combination(args.set_hz, len(stream_channels), is_buffer=False)
+            if args.duration is not None:
+                if not math.isfinite(args.duration) or args.duration <= 0:
+                    raise AtkDl16Error("stream duration must be a positive finite number")
+                stream_set_time = args.duration * 1000.0
+            else:
+                stream_set_time = ((1 << 40) - 1) // (args.set_hz // 1_000)
         if args.command == "capture":
             if args.capture_command == "parse":
                 for index, packet in enumerate(_parse_capture_file(args.input)):
@@ -566,6 +599,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
             if args.capture_command == "run" and args.dry_run:
                 raise AtkDl16Error("capture run requires connected hardware; use capture configure for dry-run")
+            if args.capture_command == "stream" and args.dry_run:
+                raise AtkDl16Error("capture stream requires connected hardware")
 
         if args.command == "firmware" and args.firmware_command == "plan":
             target = FirmwareTarget(args.target)
@@ -736,6 +771,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 trigger_channel=run_trigger_channel,
                 output_dir=args.output_dir,
                 read_size=args.read_size,
+            )
+            print(json.dumps(manifest, sort_keys=True))
+            return 0
+
+        if args.command == "capture" and args.capture_command == "stream":
+            assert stream_channels is not None
+            assert stream_sample_index is not None
+            assert stream_set_time is not None
+            params = SamplingParameters(
+                set_time=stream_set_time,
+                set_hz=args.set_hz,
+                trigger_position_percent=0,
+                threshold_level=args.threshold,
+                sample_index=stream_sample_index,
+                collect_type=1,
+            )
+            manifest = stream_capture_to_disk(
+                device, backend, params,
+                channels=stream_channels,
+                output_dir=args.output_dir,
+                read_size=args.read_size,
+                sleep_fn=time.sleep,
             )
             print(json.dumps(manifest, sort_keys=True))
             return 0

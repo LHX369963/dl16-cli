@@ -365,6 +365,29 @@ def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp
     assert set(manifest["channels"]) == {"6", "7"}
 
 
+def test_cli_capture_stream_writes_incrementally_without_buffer_flag(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + b"\x66" * 125 + b"\xa6" * 12)
+        + _capture_packet(1, b"\x07\x00" + b"\x77" * 125 + b"\xa7" * 12)
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "stream"
+    assert cli.main([
+        "capture", "stream", "--channels", "6,7", "--duration", "0.001",
+        "--sample-rate", "1000000", "--threshold", "1.2",
+        "--output-dir", str(output),
+    ]) == 0
+    assert backend.sent_frames[0][11] == 0
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["storage"] == "incremental-disk"
+    assert manifest["sample_depth"] == 1000
+
+
 def test_cli_capture_run_rejects_duplicate_channels(capsys, tmp_path):
     rc = main([
         "capture", "run", "--channels", "6,6", "--set-time", "1",
