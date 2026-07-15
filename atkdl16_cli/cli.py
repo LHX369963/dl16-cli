@@ -16,6 +16,7 @@ from .capture import (
 )
 from .device import AtkDevice
 from .errors import AtkDl16Error
+from .export import export_capture
 from .firmware import (
     FirmwareTarget,
     McuTransportMode,
@@ -83,6 +84,10 @@ def _build_parser() -> argparse.ArgumentParser:
     decode_capture.add_argument("--input", required=True)
     decode_capture.add_argument("--output-dir", required=True)
     decode_capture.add_argument("--rle", action="store_true", help="expand recovered value/count RLE pairs")
+    export = capture_sub.add_parser("export", help="export decoded channels as CSV, edge CSV, or VCD")
+    export.add_argument("--input-dir", required=True, help="decoded capture directory containing manifest.json")
+    export.add_argument("--output", required=True, help="destination file")
+    export.add_argument("--format", required=True, choices=("csv", "edges", "vcd"))
     run_capture = capture_sub.add_parser(
         "run", help="initialize, configure, trigger, acquire and decode in one process"
     )
@@ -548,6 +553,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
             if args.capture_command == "decode":
                 print(json.dumps(_decode_capture_file(args.input, args.output_dir, is_rle=args.rle), sort_keys=True))
+                return 0
+            if args.capture_command == "export":
+                result = export_capture(args.input_dir, args.output, format=args.format)
+                print(json.dumps({
+                    "format": result.format,
+                    "output": str(result.output),
+                    "channels": list(result.channels),
+                    "samples": result.samples,
+                    "rows": result.rows,
+                }, sort_keys=True))
                 return 0
             if args.capture_command == "run" and args.dry_run:
                 raise AtkDl16Error("capture run requires connected hardware; use capture configure for dry-run")
