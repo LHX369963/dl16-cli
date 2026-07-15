@@ -68,12 +68,22 @@ bytes 5-8: duty_count, little-endian in the prototype
 ```
 
 ```text
-period_count = int(200_000_000 / frequency_hz)
-duty_count = int(period_count * duty_percent / 100)
+period_count = floor(200_000_000 / frequency_hz + 0.5)
+duty_count = floor(period_count * duty_percent / 100 + 0.5)
 ```
 
 The 200 MHz counter clock is confirmed by a live 1 kHz/50% original-application
 transaction (`period_count=200000`, `duty_count=100000`) and a 1 MHz CH7 capture.
+The half-up rounding above is also matched to the original disassembly rather
+than Python's previous truncation. The DL16 UI exposes PWM0 and PWM1, so the CLI
+now rejects unsupported PWM channel numbers outside 0..1.
+
+A live PWM0-to-CH7 regression matrix covered 34 combinations from 100 Hz to
+100 kHz and duties 0, 10, 25, 50, 75, 90, and 100 percent; all 34 matched the
+counter-derived expectation within 1 MHz acquisition quantization. A separate
+20-capture sequential stability run also completed without failure. Raw test
+artifacts and machine-readable results are stored under
+`reverse/pwm-matrix/` outside the source tree.
 
 ## PWM stop payload
 

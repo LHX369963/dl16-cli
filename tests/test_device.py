@@ -39,8 +39,8 @@ def test_device_pwm_start_sends_expected_transport_frame():
 def test_device_pwm_stop_sends_expected_transport_frame():
     backend = DryRunBackend()
     device = AtkDevice(backend)
-    frame = device.pwm_stop(channel=3)
-    expected = build_transport_frame(Command.PWM, build_pwm_stop_payload(3))
+    frame = device.pwm_stop(channel=1)
+    expected = build_transport_frame(Command.PWM, build_pwm_stop_payload(1))
     assert frame == expected
     assert backend.sent_frames == [expected]
 

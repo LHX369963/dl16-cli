@@ -319,6 +319,9 @@ def _run_single_channel_capture(
                     packed.extend(packet.body)
                     if len(packed) >= target_wire_bytes:
                         break
+        # The original receive thread leaves about 65 ms between the final
+        # sample block and STOP, allowing the FPGA completion path to settle.
+        time.sleep(0.07)
     finally:
         if capture_started:
             device.stop_no_response()

@@ -27,11 +27,11 @@ def test_cli_pwm_start_dry_run_prints_frame(capsys):
 
 
 def test_cli_pwm_stop_dry_run_prints_frame(capsys):
-    rc = main(["--dry-run", "pwm", "stop", "--channel", "3"])
+    rc = main(["--dry-run", "pwm", "stop", "--channel", "1"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "PWM_STOP" in out
-    assert "170240" in out
+    assert "170220" in out
 
 
 def test_cli_stop_dry_run_prints_frame(capsys):
@@ -282,12 +282,14 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_header(
         + _capture_packet(1, b"\x07\x00" + sample_data)
     ]
     initialized = []
+    sleeps = []
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
     monkeypatch.setattr(
         cli.AtkDevice,
         "initialize_connection",
         lambda self: initialized.append(True) or b"DL16",
     )
+    monkeypatch.setattr(cli.time, "sleep", sleeps.append)
     output = tmp_path / "capture"
     rc = cli.main([
         "capture", "run", "--channel", "7", "--set-time", "1",
@@ -297,6 +299,7 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_header(
     ])
     assert rc == 0
     assert initialized == [True]
+    assert sleeps == [0.06, 0.07]
     assert len(backend.sent_frames) == 3
     assert backend.sent_frames[0][9:11] == b"\x11\x0e"
     assert backend.sent_frames[1][9:11] == b"\x12\x0b"
