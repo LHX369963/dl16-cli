@@ -339,6 +339,11 @@ body[7..N]    NUL-terminated local-text device string
 
 The CLI intentionally labels the numeric fields `value_3_4` and `value_5_6` until their exact product/version names can be confirmed from hardware output.
 
+Repeated live queries on 2026-07-18 also returned discriminator `0` with the
+same trailing `DL16` text layout. For this observed variant the CLI exposes the
+text and preserves bytes 3..6 as `unassigned_3_6_hex`; it does not apply the
+format-1 decimal interpretation to fields the original parser did not assign.
+
 Raw capture and inspection:
 
 ```bash

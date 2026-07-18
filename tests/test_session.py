@@ -74,6 +74,25 @@ def test_json_session_processes_commands_and_returns_one_json_line_each(monkeypa
     assert device.stops == 1
 
 
+def test_session_capture_supports_buffer_without_reinitializing(monkeypatch, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        "atkdl16_cli.session.capture_to_disk",
+        lambda device, backend, params, **kwargs: calls.append((params, kwargs)) or {"mode": "buffer"},
+    )
+    device = FakeDevice()
+    with Dl16Session(FakeBackend(), device=device) as session:
+        result = session.capture(
+            channels=[7, 15], sample_rate_hz=250_000_000, duration_ms=1,
+            output_dir=tmp_path, buffer=True, trigger="rising", trigger_channel=7,
+        )
+    assert result == {"mode": "buffer"}
+    assert device.opens == 1
+    assert calls[0][0].is_buffer is True
+    assert calls[0][1]["initialize"] is False
+    assert calls[0][1]["channels"] == [7, 15]
+
+
 def test_cli_session_reads_jsonl_command_file_over_one_connection(monkeypatch, tmp_path, capsys):
     import atkdl16_cli.cli as cli
 

@@ -33,6 +33,7 @@ def test_parse_trigger_states_accepts_names_case_insensitively():
         TriggerState.DOUBLE,
         TriggerState.NULL,
     ]
+    assert parse_trigger_states("either,any") == [TriggerState.DOUBLE, TriggerState.DOUBLE]
 
 
 def test_simple_trigger_appends_collect_type_flags():

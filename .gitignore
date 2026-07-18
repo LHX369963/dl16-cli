@@ -2,3 +2,10 @@
 .worktrees/
 *.egg-info/
 __pycache__/
+.pytest_cache/
+build/
+dist/
+reverse/
+extracted/
+ATK-Logic_*.deb
+ATK-Logic_zh_CN.pdf

@@ -208,3 +208,17 @@ def test_type2_device_info_exposes_recovered_numeric_fields_and_nul_terminated_t
         "device_text": "DL16-A",
         "reserved_1_2_hex": "aabb",
     }
+
+
+def test_type2_format_zero_keeps_unknown_fields_but_exposes_device_text():
+    body = bytes((0, 0x02, 0x10, 0x02, 0x16, 0x0B, 0x08)) + b"DL16"
+    packet = Dl16StreamParser().feed(dl16_packet(2, b"\xff\x00" + body))[0]
+    assert interpret_capture_packet(packet) == {
+        "type": 2,
+        "metadata0": 0xFF,
+        "metadata1": 0,
+        "device_info_format": 0,
+        "device_text": "DL16",
+        "reserved_1_2_hex": "0210",
+        "unassigned_3_6_hex": "02160b08",
+    }

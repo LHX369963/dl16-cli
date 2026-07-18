@@ -147,6 +147,23 @@ def test_pyusb_backend_open_claims_interface_without_resetting_active_configurat
     assert dev.configuration_set is False
 
 
+def test_pyusb_backend_open_wraps_permission_error_with_udev_hint():
+    from atkdl16_cli.errors import UsbBackendError
+    from atkdl16_cli.usb import PyUsbBackend
+
+    class PermissionUtil(FakeUtil):
+        @staticmethod
+        def claim_interface(device, interface):
+            error = PermissionError("access denied")
+            error.errno = 13
+            raise error
+
+    dev, _, _ = make_supported_fake_device()
+    backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=PermissionUtil)
+    with pytest.raises(UsbBackendError, match="udev/99-atk-dl16.rules"):
+        backend.open()
+
+
 def test_pyusb_backend_close_releases_interface_and_disposes_resources():
     from atkdl16_cli.usb import PyUsbBackend
 

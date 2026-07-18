@@ -10,6 +10,17 @@ from .protocol import SUPPORTED_USB_IDS
 NORMAL_COMMAND_TRANSFER_SIZE = 0x800
 
 
+def _usb_error_message(action: str, exc: Exception) -> str:
+    text = str(exc)
+    errno = getattr(exc, "errno", None)
+    if errno in {1, 13} or "access" in text.lower() or "permission" in text.lower():
+        return (
+            f"USB {action} failed: permission denied. Install udev/99-atk-dl16.rules, "
+            f"reload udev rules, and reconnect the DL16 ({text})"
+        )
+    return f"USB {action} failed: {text}"
+
+
 def _require_ffcc_block_size(data: bytes) -> bytes:
     data = bytes(data)
     if len(data) % NORMAL_COMMAND_TRANSFER_SIZE:
@@ -166,35 +177,55 @@ class PyUsbBackend:
 
     def list_devices(self) -> list[DeviceInfo]:
         devices = []
-        for item in self.usb_core.find(find_all=True):
-            vid = int(getattr(item, "idVendor"))
-            pid = int(getattr(item, "idProduct"))
-            if self.vid_pid is not None and (vid, pid) != self.vid_pid:
-                continue
-            if is_supported_usb_id(vid, pid):
-                devices.append(
-                    DeviceInfo(
-                        vid=vid,
-                        pid=pid,
-                        bus=getattr(item, "bus", None),
-                        address=getattr(item, "address", None),
-                        path=self._device_path(item),
-                        speed=str(getattr(item, "speed", "unknown")),
+        try:
+            for item in self.usb_core.find(find_all=True):
+                vid = int(getattr(item, "idVendor"))
+                pid = int(getattr(item, "idProduct"))
+                if self.vid_pid is not None and (vid, pid) != self.vid_pid:
+                    continue
+                if is_supported_usb_id(vid, pid):
+                    devices.append(
+                        DeviceInfo(
+                            vid=vid,
+                            pid=pid,
+                            bus=getattr(item, "bus", None),
+                            address=getattr(item, "address", None),
+                            path=self._device_path(item),
+                            speed=str(getattr(item, "speed", "unknown")),
+                        )
                     )
-                )
+        except Exception as exc:
+            raise UsbBackendError(_usb_error_message("enumeration", exc)) from exc
         return devices
 
     def open(self) -> None:
-        if self.device is None:
-            self.device = self._find_device()
-        if self.device is None:
-            raise UsbBackendError("no supported ATK DL16 device found")
-        self._detach_kernel_driver(0)
-        self.usb_util.claim_interface(self.device, 0)
-        self._claimed = True
-        self.write_endpoint, self.read_endpoint = self._find_endpoints(self.device)
-        if self.write_endpoint is None:
-            raise UsbBackendError("could not find USB OUT endpoint")
+        try:
+            if self.device is None:
+                self.device = self._find_device()
+            if self.device is None:
+                raise UsbBackendError("no supported ATK DL16 device found")
+            self._detach_kernel_driver(0)
+            self.usb_util.claim_interface(self.device, 0)
+            self._claimed = True
+            self.write_endpoint, self.read_endpoint = self._find_endpoints(self.device)
+            if self.write_endpoint is None:
+                raise UsbBackendError("could not find USB OUT endpoint")
+        except UsbBackendError:
+            self._release_after_open_failure()
+            raise
+        except Exception as exc:
+            self._release_after_open_failure()
+            raise UsbBackendError(_usb_error_message("open", exc)) from exc
+
+    def _release_after_open_failure(self) -> None:
+        if self.device is not None and self._claimed:
+            try:
+                self.usb_util.release_interface(self.device, 0)
+            except Exception:
+                pass
+        self._claimed = False
+        self.write_endpoint = None
+        self.read_endpoint = None
 
     def recover_ffcc_link(self, timeout_seconds: float = 3.0) -> None:
         """Recover an already-plugged FFCC device without a physical hotplug."""
@@ -214,7 +245,7 @@ class PyUsbBackend:
             self.device.clear_halt(0x81)
             self.device.reset()
         except Exception as exc:
-            raise UsbBackendError(f"FFCC USB link reset failed: {exc}") from exc
+            raise UsbBackendError(_usb_error_message("FFCC link reset", exc)) from exc
         if hasattr(self.usb_util, "dispose_resources"):
             self.usb_util.dispose_resources(self.device)
         self.device = None
@@ -242,11 +273,23 @@ class PyUsbBackend:
         raise UsbBackendError(f"FFCC device did not become claimable after reset: {last_error}")
 
     def close(self) -> None:
+        error: Exception | None = None
         if self.device is not None and self._claimed:
-            self.usb_util.release_interface(self.device, 0)
-            self._claimed = False
+            try:
+                self.usb_util.release_interface(self.device, 0)
+            except Exception as exc:
+                error = exc
+            finally:
+                self._claimed = False
         if self.device is not None and hasattr(self.usb_util, "dispose_resources"):
-            self.usb_util.dispose_resources(self.device)
+            try:
+                self.usb_util.dispose_resources(self.device)
+            except Exception as exc:
+                error = error or exc
+        self.write_endpoint = None
+        self.read_endpoint = None
+        if error is not None:
+            raise UsbBackendError(_usb_error_message("close", error)) from error
 
     def send_frame(self, frame: bytes) -> bytes:
         if self.write_endpoint is None or self.read_endpoint is None:
@@ -288,7 +331,7 @@ class PyUsbBackend:
         try:
             return int(self.write_endpoint.write(bytes(data), timeout=timeout))
         except Exception as exc:
-            raise UsbBackendError(f"USB write failed: {exc}") from exc
+            raise UsbBackendError(_usb_error_message("write", exc)) from exc
 
     def read_chunk(self, size: int | None = None, timeout_ms: int | None = None) -> bytes:
         if self.read_endpoint is None:
@@ -313,7 +356,7 @@ class PyUsbBackend:
                 return decode_ffcc_transport(data)
             return data
         except Exception as exc:
-            raise UsbBackendError(f"USB read failed: {exc}") from exc
+            raise UsbBackendError(_usb_error_message("read", exc)) from exc
 
     def _uses_ffcc_transport(self) -> bool:
         return (

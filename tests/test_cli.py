@@ -76,7 +76,7 @@ def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
     rc = cli.main(["--vid-pid", "1a86:ffcc", "--timeout-ms", "250", "info"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "GET_DEVICE_DATA response: 99" in out
+    assert __import__("json").loads(out) == {"response_bytes": 1, "response_prefix_hex": "99"}
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
 
 
@@ -398,6 +398,21 @@ def test_cli_capture_run_rejects_duplicate_channels(capsys, tmp_path):
     assert "duplicate channel" in capsys.readouterr().err
 
 
+def test_cli_capture_run_refuses_to_replace_existing_capture(monkeypatch, tmp_path, capsys):
+    import atkdl16_cli.cli as cli
+
+    (tmp_path / "manifest.json").write_text("old")
+    backend = CliFakeBackend()
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: pytest.fail("USB initialized"))
+    rc = cli.main([
+        "capture", "run", "--channel", "7", "--set-time", "1",
+        "--sample-rate", "1000000", "--output-dir", str(tmp_path),
+    ])
+    assert rc == 1
+    assert "already contains manifest.json" in capsys.readouterr().err
+
+
 def test_cli_capture_run_buffer_rle_decodes_online(monkeypatch, tmp_path):
     import atkdl16_cli.cli as cli
 
@@ -488,7 +503,10 @@ def test_cli_capture_run_rejects_stream_channel_limit_before_usb(capsys, tmp_pat
 
 
 @pytest.mark.parametrize(
-    ("edge", "trigger_byte"), [("rising", 0x97), ("falling", 0xA7)]
+    ("edge", "trigger_byte"), [
+        ("rising", 0x97), ("high", 0xC7), ("falling", 0xA7),
+        ("low", 0x87), ("either", 0xB7),
+    ]
 )
 def test_cli_capture_run_sends_edge_trigger(monkeypatch, tmp_path, edge, trigger_byte):
     import atkdl16_cli.cli as cli
@@ -510,6 +528,31 @@ def test_cli_capture_run_sends_edge_trigger(monkeypatch, tmp_path, edge, trigger
     assert manifest["trigger"] == {"channel": 6, "edge": edge, "position_percent": 50.0}
 
 
+def test_cli_capture_run_sends_multi_channel_and_trigger(monkeypatch, tmp_path):
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [
+        _capture_packet(1, b"\x07\x00" + b"\x55" * 125 + b"\x00" * 12)
+        + _capture_packet(1, b"\x0f\x00" + b"\x55" * 125 + b"\x00" * 12)
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "multi-trigger"
+    assert cli.main([
+        "capture", "run", "--buffer", "--channels", "7,15",
+        "--trigger-states", "7=rising,15=high", "--set-time", "1",
+        "--sample-rate", "1000000", "--trigger-position", "50",
+        "--output-dir", str(output),
+    ]) == 0
+    trigger_payload = backend.sent_frames[1][11:19]
+    assert trigger_payload[3] == 0x79
+    assert trigger_payload[7] == 0x7C
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["trigger"]["conditions"] == {"7": "rising", "15": "high"}
+
+
 def test_cli_capture_run_rejects_trigger_channel_that_is_not_captured(capsys, tmp_path):
     rc = main([
         "capture", "run", "--channel", "6", "--trigger", "rising", "--trigger-channel", "7",
@@ -518,6 +561,29 @@ def test_cli_capture_run_rejects_trigger_channel_that_is_not_captured(capsys, tm
     ])
     assert rc == 1
     assert "must be one of the captured channels" in capsys.readouterr().err
+
+
+def test_cli_capture_run_times_out_when_trigger_never_matches(monkeypatch, tmp_path, capsys):
+    import itertools
+    import atkdl16_cli.acquisition as acquisition
+    import atkdl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [_capture_packet(4, b"\xff\x00\x12\x03")]
+    device_stops = []
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
+    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.AtkDevice, "stop_no_response", lambda self: device_stops.append(True))
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    clock = itertools.chain([0.0], itertools.repeat(2.0))
+    monkeypatch.setattr(acquisition.time, "monotonic", lambda: next(clock))
+    assert cli.main([
+        "capture", "run", "--buffer", "--channel", "7", "--trigger", "rising",
+        "--set-time", "1", "--sample-rate", "1000000", "--trigger-timeout", "1",
+        "--output-dir", str(tmp_path / "timeout"),
+    ]) == 1
+    assert "trigger was not satisfied within 1 seconds" in capsys.readouterr().err
+    assert device_stops == [True]
 
 
 def test_cli_firmware_plan_is_offline_and_writes_exact_frames(tmp_path):

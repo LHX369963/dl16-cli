@@ -38,8 +38,17 @@ _NAME_MAP = {
     "low": TriggerState.LOW,
     "0": TriggerState.LOW,
     "double": TriggerState.DOUBLE,
+    "either": TriggerState.DOUBLE,
+    "any": TriggerState.DOUBLE,
     "c": TriggerState.DOUBLE,
 }
+
+
+def parse_trigger_state(text: str) -> TriggerState:
+    name = text.strip().lower()
+    if name not in _NAME_MAP:
+        raise ProtocolError(f"unknown trigger state: {text!r}")
+    return _NAME_MAP[name]
 
 
 def parse_trigger_states(text: str) -> list[TriggerState]:
@@ -47,10 +56,7 @@ def parse_trigger_states(text: str) -> list[TriggerState]:
         raise ProtocolError("trigger state list cannot be empty")
     result: list[TriggerState] = []
     for raw in text.split(","):
-        name = raw.strip().lower()
-        if name not in _NAME_MAP:
-            raise ProtocolError(f"unknown trigger state: {raw!r}")
-        result.append(_NAME_MAP[name])
+        result.append(parse_trigger_state(raw))
     return result
 
 

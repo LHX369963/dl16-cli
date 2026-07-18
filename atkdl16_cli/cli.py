@@ -15,10 +15,12 @@ from .capture import (
     decode_channel_packet,
     interpret_capture_packet,
 )
+from .acquisition import capture_to_disk
 from .device import AtkDevice
 from .decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
 from .errors import AtkDl16Error
 from .export import export_capture
+from .measure import measure_pwm_capture
 from .firmware import (
     FirmwareTarget,
     McuTransportMode,
@@ -29,11 +31,20 @@ from .firmware import (
     firmware_data_frames,
     flash_firmware,
 )
+from .filtering import filter_glitches
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .sampling import resolve_sample_index, validate_capture_combination
+from .search import search_capture
 from .session import Dl16Session, run_json_session
+from .sigrok import decode_with_sigrok, list_sigrok_decoders, show_sigrok_decoder
 from .streaming import stream_capture_to_disk
-from .trigger import SerialTriggerConfig, StageCondition, TriggerState, parse_trigger_states
+from .trigger import (
+    SerialTriggerConfig,
+    StageCondition,
+    TriggerState,
+    parse_trigger_state,
+    parse_trigger_states,
+)
 from .usb import DeviceInfo, DryRunBackend, PyUsbBackend, UsbBackend, parse_usb_id
 
 
@@ -45,6 +56,16 @@ def _print_response(label: str, response: bytes) -> None:
     print(f"{label} response: {response.hex()}")
 
 
+def _print_device_info(response: bytes, *, include_raw: bool = False) -> None:
+    packets = Dl16StreamParser().feed(response)
+    info = next((interpret_capture_packet(packet) for packet in packets if packet.packet_type == 2), None)
+    if info is None:
+        info = {"response_bytes": len(response), "response_prefix_hex": response[:64].hex()}
+    if include_raw:
+        info["raw_response_hex"] = response.hex()
+    print(json.dumps(info, sort_keys=True))
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="atkdl16")
     parser.add_argument("--dry-run", action="store_true", help="print frames without accessing USB hardware")
@@ -53,7 +74,8 @@ def _build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("list", help="list supported or attached devices")
-    sub.add_parser("info", help="print device info query frame or query a device")
+    info = sub.add_parser("info", help="query device information")
+    info.add_argument("--raw", action="store_true", help="also include the complete raw response")
     session = sub.add_parser("session", help="run newline-delimited JSON commands over one persistent link")
     session.add_argument("--commands", default="-", help="JSONL command file; '-' reads standard input")
 
@@ -105,16 +127,20 @@ def _build_parser() -> argparse.ArgumentParser:
         "--set-hz", "--sample-rate", dest="set_hz", type=int, required=True,
         help="sampling frequency in Hz; the hardware index is selected automatically",
     )
-    run_capture.add_argument("--trigger-position", type=float, required=True, help="trigger position percent")
+    run_capture.add_argument("--trigger-position", type=float, default=0, help="trigger position percent (default: 0)")
     run_capture.add_argument(
-        "--trigger", choices=("none", "rising", "falling"), default="none",
-        help="optional simple edge trigger",
+        "--trigger", choices=("none", "rising", "high", "falling", "low", "either"),
+        default="none", help="optional single-channel trigger condition",
     )
     run_capture.add_argument(
         "--trigger-channel", type=int, default=None,
-        help="edge-trigger channel; defaults to the first captured channel",
+        help="trigger channel; defaults to the first captured channel",
     )
-    run_capture.add_argument("--threshold", type=float, required=True, help="threshold level in volts")
+    run_capture.add_argument(
+        "--trigger-states", default=None, metavar="CH=STATE,...",
+        help="multi-channel AND trigger, for example 7=rising,15=high",
+    )
+    run_capture.add_argument("--threshold", type=float, default=1.2, help="threshold level in volts (default: 1.2)")
     run_capture.add_argument(
         "--sample-index", type=int, default=None,
         help="optional recovered index assertion; normally selected automatically",
@@ -123,6 +149,11 @@ def _build_parser() -> argparse.ArgumentParser:
     run_capture.add_argument("--rle", action="store_true", help="enable Buffer hardware RLE compression")
     run_capture.add_argument("--output-dir", required=True)
     run_capture.add_argument("--read-size", type=int, default=16384)
+    run_capture.add_argument(
+        "--trigger-timeout", type=float, default=30.0,
+        help="seconds to wait for the first triggered sample (default: 30)",
+    )
+    run_capture.add_argument("--force", action="store_true", help="replace capture artifacts in output-dir")
     stream_capture = capture_sub.add_parser(
         "stream", help="capture Stream mode incrementally to disk; Ctrl-C retains synchronized data"
     )
@@ -141,6 +172,39 @@ def _build_parser() -> argparse.ArgumentParser:
     stream_capture.add_argument("--sample-index", type=int, default=None)
     stream_capture.add_argument("--output-dir", required=True)
     stream_capture.add_argument("--read-size", type=int, default=16384)
+    stream_capture.add_argument("--force", action="store_true", help="replace capture artifacts in output-dir")
+    measure = capture_sub.add_parser("measure", help="measure PWM frequency and duty from a capture")
+    measure.add_argument("--input-dir", required=True)
+    measure.add_argument("--channel", type=int, required=True)
+    sigrok = capture_sub.add_parser("sigrok", help="decode through the sigrok protocol library")
+    sigrok_mode = sigrok.add_mutually_exclusive_group()
+    sigrok_mode.add_argument("--list", action="store_true", help="list installed protocol decoders")
+    sigrok_mode.add_argument("--show", metavar="DECODER", help="show decoder channels and options")
+    sigrok.add_argument("--input-dir", help="decoded capture directory")
+    sigrok.add_argument("--decoder", help="sigrok decoder ID, for example can or jtag")
+    sigrok.add_argument(
+        "--channel", action="append", default=[], metavar="NAME=CH",
+        help="decoder channel mapping; repeat for multiple signals",
+    )
+    sigrok.add_argument(
+        "--option", action="append", default=[], metavar="NAME=VALUE",
+        help="decoder option; repeat for multiple options",
+    )
+    sigrok.add_argument("--annotations", default=None, help="sigrok annotation selection")
+    sigrok.add_argument("--output", default=None, help="optional text output file")
+    glitch_filter = capture_sub.add_parser("filter", help="remove short pulses into a derived capture")
+    glitch_filter.add_argument("--input-dir", required=True)
+    glitch_filter.add_argument("--output-dir", required=True)
+    glitch_filter.add_argument("--max-samples", type=int, required=True)
+    glitch_filter.add_argument("--channels", default=None, help="optional comma-separated channels")
+    glitch_filter.add_argument("--force", action="store_true")
+    search = capture_sub.add_parser("search", help="find samples matching channel conditions")
+    search.add_argument("--input-dir", required=True)
+    search.add_argument("--conditions", required=True, metavar="CH=STATE,...")
+    search.add_argument("--start-sample", type=int, default=0)
+    search.add_argument("--end-sample", type=int, default=None)
+    search.add_argument("--limit", type=int, default=1000)
+    search.add_argument("--output", default=None, help="optional JSON output file")
     uart = capture_sub.add_parser("uart", help="offline UART decode from a capture directory")
     uart.add_argument("--input-dir", required=True)
     uart.add_argument("--channel", type=int, required=True)
@@ -214,6 +278,8 @@ def _dry_backend() -> DryRunBackend:
 
 
 def create_backend(dry_run: bool, vid_pid: tuple[int, int] | None, timeout_ms: int) -> UsbBackend:
+    if timeout_ms <= 0:
+        raise AtkDl16Error(f"timeout-ms must be positive, got {timeout_ms}")
     if dry_run:
         return _dry_backend()
     return PyUsbBackend(vid_pid=vid_pid, timeout_ms=timeout_ms)
@@ -259,6 +325,26 @@ def _parse_capture_channels(single: int | None, multiple: str | None) -> list[in
     if invalid:
         raise AtkDl16Error(f"channel must be in range 0..15, got {invalid[0]}")
     return sorted(channels)
+
+
+def _parse_trigger_conditions(text: str, channels: Sequence[int]) -> dict[int, TriggerState]:
+    result: dict[int, TriggerState] = {}
+    for item in text.split(","):
+        parts = item.split("=", 1)
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            raise AtkDl16Error("trigger-states must use CH=STATE comma-separated syntax")
+        try:
+            channel = int(parts[0], 10)
+        except ValueError as exc:
+            raise AtkDl16Error(f"invalid trigger channel: {parts[0]!r}") from exc
+        if channel in result:
+            raise AtkDl16Error(f"duplicate trigger channel: {channel}")
+        if channel not in channels:
+            raise AtkDl16Error(f"trigger channel {channel} must be one of the captured channels")
+        result[channel] = parse_trigger_state(parts[1])
+    if not result or all(state == TriggerState.NULL for state in result.values()):
+        raise AtkDl16Error("trigger-states requires at least one active condition")
+    return result
 
 
 def _load_json_object(path: str) -> dict:
@@ -381,139 +467,18 @@ def _run_multi_channel_capture(
     output_dir: str,
     read_size: int,
 ) -> dict:
-    channels = list(channels)
-    if not channels:
-        raise AtkDl16Error("at least one capture channel is required")
-    if len(set(channels)) != len(channels):
-        raise AtkDl16Error("duplicate channel in capture channel list")
-    if any(not 0 <= channel <= 15 for channel in channels):
-        raise AtkDl16Error("capture channels must be in range 0..15")
-    if trigger_state != TriggerState.NULL:
-        if trigger_channel is None:
-            trigger_channel = channels[0]
-        if trigger_channel not in channels:
-            raise AtkDl16Error("trigger channel must be one of the captured channels")
-    if read_size <= 0 or read_size % 2048:
-        raise AtkDl16Error("capture run read-size must be a positive multiple of 2048")
-
-    depth = int(params.set_time * (params.set_hz // 1_000))
-    expected_bytes = (depth + 7) // 8
-    if expected_bytes == 0:
-        raise AtkDl16Error("capture depth must contain at least one sample")
-
-    destination = Path(output_dir)
-    try:
-        destination.mkdir(parents=True, exist_ok=True)
-        wire_stream = (destination / "wire.bin").open("wb")
-    except OSError as exc:
-        raise AtkDl16Error(f"cannot create capture output {output_dir!r}: {exc}") from exc
-
-    device.initialize_connection()
-    states = [TriggerState.NULL] * 16
-    if trigger_state != TriggerState.NULL:
-        assert trigger_channel is not None
-        states[trigger_channel] = trigger_state
-    enabled = [False] * 16
-    for channel in channels:
-        enabled[channel] = True
-    parser = Dl16StreamParser()
-    packed = {channel: bytearray() for channel in channels}
-    trailer_bytes = 1 if params.is_rle else 12
-    target_wire_bytes = expected_bytes + trailer_bytes
-    capture_started = False
-    sample_started = False
-    hardware_complete = False
-    try:
-        device.configure_sampling_no_response(params)
-        time.sleep(0.06)
-        device.configure_simple_trigger_no_response(
-            states, enabled=enabled, collect_type=params.collect_type
-        )
-        capture_started = True
-        while any(len(data) < target_wire_bytes for data in packed.values()):
-            chunk = backend.read_chunk(size=read_size)
-            if not chunk:
-                progress = ", ".join(
-                    f"CH{channel}={len(data)}/{target_wire_bytes}"
-                    for channel, data in packed.items()
-                )
-                raise AtkDl16Error(
-                    f"capture stream ended before all channels completed ({progress})"
-                )
-            for packet in parser.feed(chunk):
-                wire_stream.write(packet.raw)
-                if (
-                    packet.packet_type == 1
-                    and packet.metadata0 in packed
-                    and len(packed[packet.metadata0]) < target_wire_bytes
-                ):
-                    block = decode_channel_packet(packet, is_rle=params.is_rle)
-                    packed[packet.metadata0].extend(block.packed_samples)
-                    sample_started = True
-                elif params.is_rle and sample_started and packet.packet_type == 6:
-                    # In RLE mode the hardware buffer can fill before the
-                    # requested depth.  The original receiver accepts the
-                    # resulting shorter acquisition; type 6 marks completion.
-                    hardware_complete = True
-            if hardware_complete:
-                break
-        # The original receive thread leaves about 65 ms between the final
-        # sample block and STOP, allowing the FPGA completion path to settle.
-        time.sleep(0.07)
-    finally:
-        wire_stream.close()
-        if capture_started:
-            device.stop_no_response()
-
-    samples: dict[int, bytes] = {}
-    for channel, data in packed.items():
-        if len(data) >= target_wire_bytes:
-            samples[channel] = bytes(data[:expected_bytes])
-        elif params.is_rle and hardware_complete and len(data) > trailer_bytes:
-            samples[channel] = bytes(data[:-trailer_bytes])
-        else:
-            samples[channel] = bytes(data[:expected_bytes])
-    for channel, data in samples.items():
-        if len(data) != expected_bytes and not (params.is_rle and hardware_complete and data):
-            raise AtkDl16Error(
-                f"CH{channel} returned {len(data)} of {expected_bytes} expected packed sample bytes"
-            )
-    actual_depth = min(min(len(data) * 8, depth) for data in samples.values())
-    shortened = actual_depth < depth
-    manifest = {
-        "bit_order": "lsb-first",
-        "mode": "buffer" if params.is_buffer else "stream",
-        "rle": params.is_rle,
-        "sample_rate_hz": params.set_hz,
-        "sample_index": params.sample_index,
-        "requested_sample_depth": depth,
-        "sample_depth": actual_depth,
-        "capture_shortened_by_hardware": shortened,
-        "transport_trailer_bytes_removed": trailer_bytes,
-        "requested_channels": channels,
-        "trigger": {
-            "edge": trigger_state.name.lower(),
-            "channel": trigger_channel,
-            "position_percent": params.trigger_position_percent,
-        },
-        "channels": {
-            str(channel): {
-                "file": f"channel-{channel:02d}.bin",
-                "packed_bytes": len(samples[channel]),
-                "samples": min(len(samples[channel]) * 8, depth),
-            }
-            for channel in channels
-        },
-    }
-    try:
-        for channel, data in samples.items():
-            (destination / f"channel-{channel:02d}.bin").write_bytes(data)
-        (destination / "manifest.json").write_text(
-            json.dumps(manifest, indent=2, sort_keys=True) + "\n"
-        )
-    except OSError as exc:
-        raise AtkDl16Error(f"cannot write capture output {output_dir!r}: {exc}") from exc
-    return manifest
+    return capture_to_disk(
+        device,
+        backend,
+        params,
+        channels=channels,
+        trigger_state=trigger_state,
+        trigger_channel=trigger_channel,
+        output_dir=output_dir,
+        read_size=read_size,
+        sleep_fn=time.sleep,
+        overwrite=True,
+    )
 
 
 def _run_single_channel_capture(
@@ -583,11 +548,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
+    backend: UsbBackend | None = None
     try:
         run_channels: list[int] | None = None
         run_sample_index: int | None = None
         run_trigger_state = TriggerState.NULL
         run_trigger_channel: int | None = None
+        run_trigger_states: dict[int, TriggerState] | None = None
         stream_channels: list[int] | None = None
         stream_sample_index: int | None = None
         stream_set_time: float | None = None
@@ -597,12 +564,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise AtkDl16Error("capture run --rle requires --buffer")
             run_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
             validate_capture_combination(args.set_hz, len(run_channels), is_buffer=args.buffer)
-            if args.trigger == "rising":
-                run_trigger_state = TriggerState.RISING
-            elif args.trigger == "falling":
-                run_trigger_state = TriggerState.FALLING
+            trigger_map = {
+                "none": TriggerState.NULL,
+                "rising": TriggerState.RISING,
+                "high": TriggerState.HIGH,
+                "falling": TriggerState.FALLING,
+                "low": TriggerState.LOW,
+                "either": TriggerState.DOUBLE,
+            }
+            run_trigger_state = trigger_map[args.trigger]
+            if args.trigger_states is not None:
+                if args.trigger != "none" or args.trigger_channel is not None:
+                    raise AtkDl16Error("--trigger-states cannot be combined with --trigger or --trigger-channel")
+                run_trigger_states = _parse_trigger_conditions(args.trigger_states, run_channels)
             run_trigger_channel = args.trigger_channel
-            if run_trigger_state != TriggerState.NULL:
+            if run_trigger_states is not None:
+                run_trigger_channel = None
+            elif run_trigger_state != TriggerState.NULL:
                 run_trigger_channel = run_trigger_channel if run_trigger_channel is not None else run_channels[0]
                 if run_trigger_channel not in run_channels:
                     raise AtkDl16Error("trigger channel must be one of the captured channels")
@@ -635,6 +613,60 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "samples": result.samples,
                     "rows": result.rows,
                 }, sort_keys=True))
+                return 0
+            if args.capture_command == "measure":
+                print(json.dumps(measure_pwm_capture(args.input_dir, channel=args.channel), sort_keys=True))
+                return 0
+            if args.capture_command == "sigrok":
+                if args.list:
+                    output = list_sigrok_decoders()
+                elif args.show is not None:
+                    output = show_sigrok_decoder(args.show)
+                else:
+                    if args.input_dir is None or args.decoder is None:
+                        raise AtkDl16Error("capture sigrok requires --input-dir and --decoder")
+                    output = decode_with_sigrok(
+                        args.input_dir, decoder=args.decoder, channels=args.channel,
+                        options=args.option, annotations=args.annotations,
+                    )
+                if args.output is not None:
+                    try:
+                        destination = Path(args.output)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_text(output)
+                    except OSError as exc:
+                        raise AtkDl16Error(f"cannot write sigrok output {args.output!r}: {exc}") from exc
+                else:
+                    print(output, end="" if output.endswith("\n") else "\n")
+                return 0
+            if args.capture_command == "filter":
+                filter_channels = (
+                    _parse_capture_channels(None, args.channels) if args.channels is not None else None
+                )
+                result = filter_glitches(
+                    args.input_dir, args.output_dir, maximum_samples=args.max_samples,
+                    channels=filter_channels, overwrite=args.force,
+                )
+                print(json.dumps(result["glitch_filter"], sort_keys=True))
+                return 0
+            if args.capture_command == "search":
+                result = search_capture(
+                    args.input_dir,
+                    conditions=_parse_trigger_conditions(args.conditions, range(16)),
+                    start_sample=args.start_sample,
+                    end_sample=args.end_sample,
+                    limit=args.limit,
+                )
+                encoded = json.dumps(result, indent=2, sort_keys=True) + "\n"
+                if args.output is not None:
+                    try:
+                        destination = Path(args.output)
+                        destination.parent.mkdir(parents=True, exist_ok=True)
+                        destination.write_text(encoded)
+                    except OSError as exc:
+                        raise AtkDl16Error(f"cannot write search output {args.output!r}: {exc}") from exc
+                else:
+                    print(encoded, end="")
                 return 0
             if args.capture_command == "uart":
                 result = decode_uart_capture(
@@ -719,7 +751,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.dry_run:
                 _print_frame("GET_DEVICE_DATA", device.get_device_data_frame())
             else:
-                _print_response("GET_DEVICE_DATA", device.get_device_data())
+                _print_device_info(device.get_device_data(), include_raw=args.raw)
             return 0
 
         if args.command == "stop":
@@ -836,15 +868,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             assert run_channels is not None
             assert run_sample_index is not None
-            manifest = _run_multi_channel_capture(
+            manifest = capture_to_disk(
                 device,
                 backend,
                 params,
                 channels=run_channels,
                 trigger_state=run_trigger_state,
                 trigger_channel=run_trigger_channel,
+                trigger_states=run_trigger_states,
                 output_dir=args.output_dir,
                 read_size=args.read_size,
+                sleep_fn=time.sleep,
+                overwrite=args.force,
+                trigger_timeout_seconds=args.trigger_timeout,
             )
             print(json.dumps(manifest, sort_keys=True))
             return 0
@@ -867,6 +903,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 output_dir=args.output_dir,
                 read_size=args.read_size,
                 sleep_fn=time.sleep,
+                overwrite=args.force,
             )
             print(json.dumps(manifest, sort_keys=True))
             return 0
@@ -925,6 +962,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     except AtkDl16Error as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
+    except KeyboardInterrupt:
+        print("error: interrupted", file=sys.stderr)
+        return 130
+    finally:
+        close = getattr(backend, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

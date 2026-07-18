@@ -9,6 +9,7 @@ from typing import Any
 
 from .capture import Dl16StreamParser, SamplingParameters, decode_channel_packet
 from .errors import AtkDl16Error
+from .storage import prepare_capture_directory
 from .trigger import TriggerState
 
 
@@ -22,6 +23,7 @@ def stream_capture_to_disk(
     read_size: int = 16384,
     sleep_fn: Callable[[float], None] = time.sleep,
     initialize: bool = True,
+    overwrite: bool = False,
 ) -> dict:
     """Capture Stream-mode packets directly to disk, retaining partial data on Ctrl-C."""
     channels = list(channels)
@@ -43,7 +45,7 @@ def stream_capture_to_disk(
     # the requested sample count and discard any same-packet suffix instead of
     # hard-coding its length.
     target_wire_bytes = expected_bytes
-    destination = Path(output_dir)
+    destination = prepare_capture_directory(output_dir, overwrite=overwrite)
     interrupted = False
     started = False
     parser = Dl16StreamParser()
@@ -52,7 +54,6 @@ def stream_capture_to_disk(
     wire_bytes = 0
 
     try:
-        destination.mkdir(parents=True, exist_ok=True)
         with ExitStack() as stack:
             wire = stack.enter_context((destination / "wire.bin").open("wb"))
             files = {
@@ -63,6 +64,7 @@ def stream_capture_to_disk(
             }
             if initialize:
                 device.initialize_connection()
+            started = True
             device.configure_sampling_no_response(params)
             sleep_fn(0.06)
             states = [TriggerState.NULL] * 16
@@ -70,7 +72,6 @@ def stream_capture_to_disk(
             device.configure_simple_trigger_no_response(
                 states, enabled=enabled, collect_type=params.collect_type
             )
-            started = True
             try:
                 while any(count < target_wire_bytes for count in written.values()):
                     chunk = backend.read_chunk(size=read_size)
@@ -111,13 +112,12 @@ def stream_capture_to_disk(
                 handle.truncate(retained_bytes)
                 handle.flush()
     except AtkDl16Error:
-        if started:
-            device.stop_no_response()
         raise
     except OSError as exc:
+        raise AtkDl16Error(f"cannot write stream capture to {output_dir!r}: {exc}") from exc
+    finally:
         if started:
             device.stop_no_response()
-        raise AtkDl16Error(f"cannot write stream capture to {output_dir!r}: {exc}") from exc
 
     manifest = {
         "bit_order": "lsb-first",
