@@ -131,25 +131,6 @@ Evidence: `reverse/high_b29e0_triggerStringToByte_QJsonArray_QString_int_int_.s`
 
 The function also reads per-channel JSON objects and the key string with length 6; this likely corresponds to an enable/disable field. Exact JSON schema must be recovered from QML and call sites.
 
-## MCU / firmware update channel
-
-Evidence:
-
-- `reverse/disasm_1175b0_USBControl::EnterBootloader_.s`
-- `reverse/disasm_117530_USBControl::GetMCUVersion_.s`
-- `reverse/disasm_117730_USBControl::SendUpdateData_unsigned_char_const_unsigned_short_bool_bool_.s`
-- symbols: `USBControl::WaitHardwareUpdate`, `USBControl::EnterHardwareUpdate`, `ThreadDownload::*`, `ConnectDevice::*Update*`.
-
-`EnterBootloader()` and `GetMCUVersion()` do not use the normal `Write(cmd,payload)` wrapper. They build a roughly 512-byte MCU frame and send it through `USBControl::SendToMCU`.
-
-Observed MCU command headers:
-
-- `GetMCUVersion`: starts with word `0x810a` in memory (instruction immediate `0xffff810a`) and byte `0x0b` at offset 2.
-- `EnterBootloader`: starts with word `0x800a` in memory (instruction immediate `0xffff800a`), copies a 16-byte literal at offset 2, stores word `0x5245` at offset `0x12`, and sends through `SendToMCU`.
-
-Firmware flashing is high-risk and must require an explicit guard flag in the CLI.
-
-
 ## Implemented prototype references
 
 The first implementation plan turns the low-risk portions of this evidence into tested code:
@@ -300,7 +281,7 @@ Live DL16 verification with flags `0xc0` confirms that online Buffer+RLE
 records are `(count, value)`. A requested 1,250,000,000-sample capture returned
 156,250,001 expanded bytes and the type-3 completion value 1,250,000,008,
 proving that RLE carries one extra packed-byte trailer. Ordinary Buffer exposes
-a 12-byte trailer. The incremental Stream path on the current DL16 firmware
+a 12-byte trailer. The incremental Stream path on the current DL16 device
 instead exposed an 8-byte same-packet suffix; capture code now stops at the
 requested sample count rather than assuming one common trailer size.
 
@@ -312,28 +293,3 @@ table omits it instead of assuming a 25/30 MHz meaning from another model.
 `Segment::GetSample` at `0xd7f80` computes `sample_index >> 3`, loads the packed byte, shifts it right by `sample_index & 7`, and masks bit 0. Therefore each packed byte contains eight chronological samples in LSB-first order.
 
 `Segment::CheckCompress` is not the USB hardware RLE decoder. It checks 64-bit words for all-zero or all-one blocks and is used by internal `Segment` storage compression.
-
-## Recovered firmware frame details
-
-Evidence sources:
-
-- `USBControl::SendToMCU` at `0x116d00`
-- `USBControl::WaitHardwareUpdate` at `0x117420`
-- `GetMCUVersion`, `EnterBootloader`, `EnterHardwareUpdate`, `SendUpdateData`, and `RestartMCU` at `0x117530..0x1179db`
-- `ThreadDownload::updateData` at `0x0fba60`
-
-`SendToMCU` submits the caller's 510-byte buffer in framed mode. When the mode byte at `USBControl+0x2e` is nonzero, it forces the transfer length to 64 bytes.
-
-Recovered fixed prefixes:
-
-- version: `0a 81 0b`
-- bootloader: `0a 80` + `ATK-LOGIC-ANALYZER`
-- MCU update entry: `0a 82` + `ATK-LOGIC-ANALYZER-MCU-V1`
-- FPGA update entry: `0a 85` + `ATK-LOGIC-ANALYZER-FPGA-V1`
-- restart: `0a 84 0b`
-
-`SendUpdateData` in framed mode stores length at offsets 2..3, copies data at offset 4, leaves zero at `4+length`, places `0x0b` at `5+length`, and sends all 510 bytes. The maximum accepted payload is `0x1f8` (504) bytes. Target boolean true maps to MCU command `0x83`; false maps to FPGA command `0x86`.
-
-`ThreadDownload::updateData` nevertheless chunks files at 256 bytes in framed mode or 64 bytes in direct mode. It sends all full chunks and then always calls `SendUpdateData` once for the remainder, even when remainder length is zero.
-
-`WaitHardwareUpdate` performs up to six synchronous reads, sleeping 50 ms between attempts. Success requires response bytes `[0x0a, expected_command, 0x01]`. Framed ACK reads request 512 bytes and direct-mode reads request 64. Direct-mode data always waits for command `0x86`. The final MCU packet sleeps 1 second before ACK; FPGA sleeps 5 seconds.

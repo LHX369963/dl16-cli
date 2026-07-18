@@ -1,7 +1,7 @@
 # DL16 CLI acceptance — 2026-07-15
 
 Target: ATK DL16 (`1a86:ffcc`) with PWM0/PWM1 looped to CH7/CH6. Other models
-and firmware update work are outside this acceptance scope.
+are outside this acceptance scope.
 
 ## Result matrix
 

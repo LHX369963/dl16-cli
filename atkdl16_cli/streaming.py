@@ -40,7 +40,7 @@ def stream_capture_to_disk(
     expected_bytes = (depth + 7) // 8
     if expected_bytes <= 0:
         raise AtkDl16Error("stream depth must contain at least one sample")
-    # Sample bytes precede a firmware-dependent completion trailer in the last
+    # Sample bytes precede a device-dependent completion trailer in the last
     # packet (8 bytes observed in DL16 Stream, 12 in older captures).  Stop on
     # the requested sample count and discard any same-packet suffix instead of
     # hard-coding its length.

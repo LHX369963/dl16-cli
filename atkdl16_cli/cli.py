@@ -21,16 +21,6 @@ from .decoders import decode_i2c_capture, decode_spi_capture, decode_uart_captur
 from .errors import AtkDl16Error
 from .export import export_capture
 from .measure import measure_pwm_capture
-from .firmware import (
-    FirmwareTarget,
-    McuTransportMode,
-    build_enter_bootloader_frame,
-    build_enter_update_frame,
-    build_get_mcu_version_frame,
-    build_restart_mcu_frame,
-    firmware_data_frames,
-    flash_firmware,
-)
 from .filtering import filter_glitches
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .sampling import resolve_sample_index, validate_capture_combination
@@ -247,27 +237,6 @@ def _build_parser() -> argparse.ArgumentParser:
     for name in ("parameter-setting", "simple-trigger", "stage-trigger", "serial-trigger"):
         raw_cmd = raw_sub.add_parser(name, help=f"send raw {name} payload")
         raw_cmd.add_argument("--payload-hex", required=True, help="payload bytes as hexadecimal, spaces allowed")
-
-    firmware = sub.add_parser("firmware", help="inspect or execute the recovered MCU update protocol")
-    firmware_sub = firmware.add_subparsers(dest="firmware_command", required=True)
-    version = firmware_sub.add_parser("version", help="query MCU/bootloader version")
-    version.add_argument("--mode", default=McuTransportMode.FRAMED_510.value, choices=[mode.value for mode in McuTransportMode])
-    bootloader = firmware_sub.add_parser("enter-bootloader", help="request application-to-bootloader transition")
-    bootloader.add_argument("--mode", default=McuTransportMode.FRAMED_510.value, choices=[mode.value for mode in McuTransportMode])
-    bootloader.add_argument("--i-understand-this-can-brick", action="store_true")
-    for name in ("plan", "flash"):
-        item = firmware_sub.add_parser(name)
-        item.add_argument("--file", required=True)
-        item.add_argument("--target", required=True, choices=[target.value for target in FirmwareTarget])
-        item.add_argument(
-            "--mode",
-            default=McuTransportMode.FRAMED_510.value,
-            choices=[mode.value for mode in McuTransportMode],
-        )
-        if name == "plan":
-            item.add_argument("--output-dir", required=True)
-        else:
-            item.add_argument("--i-understand-this-can-brick", action="store_true")
 
     return parser
 
@@ -504,46 +473,6 @@ def _run_single_channel_capture(
     )
 
 
-def _read_binary_file(path: str, label: str) -> bytes:
-    try:
-        return Path(path).read_bytes()
-    except OSError as exc:
-        raise AtkDl16Error(f"cannot read {label} file {path!r}: {exc}") from exc
-
-
-def _write_firmware_plan(
-    firmware: bytes,
-    output_dir: str,
-    *,
-    target: FirmwareTarget,
-    mode: McuTransportMode,
-) -> dict:
-    destination = Path(output_dir)
-    transfer_size = 64 if mode == McuTransportMode.DIRECT_64 else 510
-    enter = build_enter_update_frame(target)[:transfer_size]
-    restart = build_restart_mcu_frame()[:transfer_size]
-    data_frames = firmware_data_frames(firmware, target=target, mode=mode)
-    try:
-        destination.mkdir(parents=True, exist_ok=True)
-        (destination / "enter.bin").write_bytes(enter)
-        for index, frame in enumerate(data_frames):
-            (destination / f"data-{index:04d}.bin").write_bytes(frame)
-        (destination / "restart.bin").write_bytes(restart)
-        manifest = {
-            "target": target.value,
-            "mode": mode.value,
-            "firmware_bytes": len(firmware),
-            "data_frames": len(data_frames),
-            "final_delay_seconds": 1 if target == FirmwareTarget.MCU else 5,
-            "ack_retries": 6,
-            "ack_retry_delay_seconds": 0.05,
-        }
-        (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-    except OSError as exc:
-        raise AtkDl16Error(f"cannot write firmware plan to {output_dir!r}: {exc}") from exc
-    return manifest
-
-
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -696,31 +625,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.capture_command == "stream" and args.dry_run:
                 raise AtkDl16Error("capture stream requires connected hardware")
 
-        if args.command == "firmware" and args.firmware_command == "plan":
-            target = FirmwareTarget(args.target)
-            mode = McuTransportMode(args.mode)
-            manifest = _write_firmware_plan(
-                _read_binary_file(args.file, "firmware"),
-                args.output_dir,
-                target=target,
-                mode=mode,
-            )
-            print(json.dumps(manifest, sort_keys=True))
-            return 0
-
         if args.command == "session" and args.dry_run:
             raise AtkDl16Error("session requires connected hardware")
-
-        if args.command == "firmware" and args.firmware_command == "flash":
-            if not args.i_understand_this_can_brick:
-                raise AtkDl16Error("firmware flash requires --i-understand-this-can-brick")
-            if args.dry_run:
-                raise AtkDl16Error("use firmware plan for offline frame generation; flash cannot use --dry-run")
-        if args.command == "firmware" and args.firmware_command == "enter-bootloader":
-            if not args.i_understand_this_can_brick:
-                raise AtkDl16Error("enter-bootloader requires --i-understand-this-can-brick")
-            if args.dry_run:
-                raise AtkDl16Error("enter-bootloader cannot use --dry-run")
 
         vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
         backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
@@ -917,35 +823,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for index, packet in enumerate(packets):
                 _print_packet_summary(index, packet)
-            return 0
-
-        if args.command == "firmware" and args.firmware_command == "flash":
-            result = flash_firmware(
-                backend,
-                _read_binary_file(args.file, "firmware"),
-                target=FirmwareTarget(args.target),
-                mode=McuTransportMode(args.mode),
-            )
-            print(json.dumps({
-                "target": result.target.value,
-                "mode": result.mode.value,
-                "firmware_bytes": result.firmware_bytes,
-                "data_frames": result.data_frames,
-            }, sort_keys=True))
-            return 0
-
-        if args.command == "firmware" and args.firmware_command == "version":
-            mode = McuTransportMode(args.mode)
-            size = 64 if mode == McuTransportMode.DIRECT_64 else 510
-            backend.write_chunk(build_get_mcu_version_frame()[:size])
-            _print_response("MCU_VERSION", backend.read_chunk(size=size))
-            return 0
-
-        if args.command == "firmware" and args.firmware_command == "enter-bootloader":
-            mode = McuTransportMode(args.mode)
-            size = 64 if mode == McuTransportMode.DIRECT_64 else 510
-            backend.write_chunk(build_enter_bootloader_frame()[:size])
-            print("enter-bootloader sent; wait for the USB device to re-enumerate before firmware flash")
             return 0
 
         if args.command == "raw":

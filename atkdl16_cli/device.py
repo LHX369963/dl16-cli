@@ -6,7 +6,6 @@ from collections.abc import Callable
 from .capture import SamplingParameters, build_parameter_setting_payload
 from .errors import ProtocolError
 from .errors import UsbBackendError
-from .firmware import build_get_mcu_version_frame
 from .protocol import Command, build_transport_frame
 from .pwm import build_pwm_start_payload, build_pwm_stop_payload
 from .trigger import (
@@ -18,6 +17,10 @@ from .trigger import (
     build_stage_trigger_payload,
 )
 from .usb import UsbBackend
+
+
+def _build_link_info_query() -> bytes:
+    return b"\x0a\x81\x0b".ljust(510, b"\x00")
 
 
 class AtkDevice:
@@ -52,7 +55,7 @@ class AtkDevice:
 
         mcu_response: bytes | None = None
         for attempt in range(6):
-            self.backend.write_chunk(build_get_mcu_version_frame(), timeout_ms=500)
+            self.backend.write_chunk(_build_link_info_query(), timeout_ms=500)
             for _ in range(16):
                 try:
                     response = self.backend.read_chunk(size=512, timeout_ms=100)

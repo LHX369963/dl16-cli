@@ -4,7 +4,7 @@
 
 **Goal:** Build the first tested CLI/library foundation for ATK DL16 reverse engineering: command constants, frame encoding, CRC hooks, USB discovery data structures, dry-run command output, and PWM payload generation.
 
-**Architecture:** Implement a small Python package with pure packet builders first, then a CLI that can run in `--dry-run` mode without hardware. Hardware USB operations are represented by a narrow backend interface so later capture, trigger, and firmware plans can add real libusb behavior without changing the packet builders.
+**Architecture:** Implement a small Python package with pure packet builders first, then a CLI that can run in `--dry-run` mode without hardware. Hardware USB operations are represented by a narrow backend interface so later capture and trigger plans can add real libusb behavior without changing the packet builders.
 
 **Tech Stack:** Python 3.10+, standard library, `pytest` for tests, optional future `pyusb` dependency not required by this plan.
 
@@ -16,7 +16,6 @@
 - Normal command inner frame is `cmd, payload_len + 1, payload...`.
 - Normal command outer frame is `8 zero bytes, 0x0a, inner, crc32(inner), 0x0b`.
 - CRC byte order remains a named parameter until verified from `gCRC32` or USB traces.
-- Firmware flashing is out of this first implementation plan and must remain unavailable from the CLI in this plan.
 - No command in this plan sends USB traffic unless the user explicitly avoids `--dry-run` and a later plan has added a real backend.
 
 ---
@@ -1007,7 +1006,7 @@ byte 0: (channel + 1) << 4
 
 ## Commands not implemented in the first plan
 
-Capture, trigger, and firmware commands remain documented in `docs/protocol/evidence-summary.md` and are intentionally not exposed as sending commands by the dry-run CLI.
+Capture and trigger commands remain documented in `docs/protocol/evidence-summary.md` and are intentionally not exposed as sending commands by the dry-run CLI.
 ```
 
 - [ ] **Step 2: Add implementation pointer to evidence summary**
@@ -1139,4 +1138,3 @@ git status --short
 ```
 
 Expected: no modified tracked files. Large reverse-engineering artifacts may remain untracked if intentionally excluded from commits.
-

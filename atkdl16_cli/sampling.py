@@ -6,7 +6,7 @@ from .errors import ProtocolError
 # Recovered from the DL16 setting index and verified against looped-back PWM.
 # Index 6 was independently confirmed at 20 MHz. Index 7 repeatedly produces
 # no sample packets on the connected DL16, so it is intentionally excluded
-# rather than borrowing a rate from another model/firmware.
+# rather than borrowing a rate from another model or software release.
 SAMPLE_RATE_TO_INDEX: dict[int, int] = {
     500_000_000: 0,
     1_000_000: 1,

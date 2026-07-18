@@ -302,8 +302,8 @@ def test_pyusb_backend_write_chunk_does_not_consume_ack():
     backend = PyUsbBackend(
         device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil, timeout_ms=250
     )
-    assert backend.write_chunk(b"firmware") == 8
-    assert out_ep.writes == [(b"firmware", 250)]
+    assert backend.write_chunk(b"payload") == 7
+    assert out_ep.writes == [(b"payload", 250)]
     assert in_ep.reads == []
 
 

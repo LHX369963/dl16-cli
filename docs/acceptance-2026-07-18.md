@@ -1,7 +1,6 @@
 # DL16 CLI acceptance - 2026-07-18
 
 Target: ATK DL16 (`1a86:ffcc`), PWM0 looped to CH7 and PWM1 looped to CH15.
-Firmware update and other non-usage operations are outside this acceptance.
 
 ## Results
 
@@ -19,7 +18,7 @@ Firmware update and other non-usage operations are outside this acceptance.
 | Glitch filter | Pass | One-sample filter processed the live two-channel capture without false pulse removals |
 | Data search | Pass | Multi-channel edge/level search scanned 200,000 live samples in 0.07 seconds with about 17 MiB RSS |
 | Extended decode | Pass | System sigrok library reads generated VCD; counter decoder reported all 2,000 CH7 rising edges |
-| Automated regression | Pass | 212 pytest cases plus `compileall` and `git diff --check` |
+| Automated regression | Pass | 193 pytest cases plus `compileall` and `git diff --check` |
 
 The duty differences are sampling quantization: PWM1 has 12 high samples in a
 50-sample period at 100 MHz and 31 high samples in a 125-sample period at

@@ -14,7 +14,6 @@
 - Real USB backend claims interface 0, matching `logic_analyzer_open` evidence.
 - Real USB backend must detach kernel driver where supported before claiming interface 0.
 - Endpoint selection must inspect descriptors and prefer OUT endpoint for writes, IN endpoint for reads; it must not rely only on recovered constants.
-- Firmware flashing remains disabled.
 - Capture and trigger command payload generation remain out of this plan.
 - Unit tests must not require physical hardware.
 
@@ -127,10 +126,9 @@ Steps:
 
 - [ ] Document pyusb extra installation: `python3 -m pip install -e '.[usb]'`.
 - [ ] Document that only `info`, `stop`, and `pwm` are wired to hardware in this stage.
-- [ ] Document that capture, triggers, and firmware remain unavailable pending protocol recovery.
+- [ ] Document that capture and triggers remain unavailable pending protocol recovery.
 - [ ] Run `python3 -m pytest -v`; expect pass.
 - [ ] Run `python3 -m atkdl16_cli.cli --dry-run list`; expect the three supported IDs.
 - [ ] Run `python3 -m atkdl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50`; expect a `PWM_START frame` line.
 - [ ] Run `git status --short`; expect no tracked modifications after commit.
 - [ ] Commit with `docs: document pyusb backend stage`.
-
