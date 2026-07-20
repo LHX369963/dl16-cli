@@ -211,6 +211,15 @@ pytest -q
 
 协议字段和逆向证据见 [`docs/protocol/protocol.md`](docs/protocol/protocol.md) 与 [`docs/protocol/evidence-summary.md`](docs/protocol/evidence-summary.md)。
 
+## Codex Skill
+
+仓库内的 `skills/dl16-cli` 由 Git 跟踪。克隆后在仓库根目录执行：
+
+```bash
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+ln -sfn "$(pwd)/skills/dl16-cli" "${CODEX_HOME:-$HOME/.codex}/skills/dl16-cli"
+```
+
 ## 已知边界
 
 - 只验证 DL16，不实现其他型号适配。
