@@ -6,7 +6,7 @@ import shutil
 from contextlib import ExitStack
 from pathlib import Path
 
-from .errors import AtkDl16Error, ProtocolError
+from .errors import Dl16Error, ProtocolError
 from .storage import prepare_capture_directory
 
 
@@ -126,5 +126,5 @@ def filter_glitches(
             json.dumps(result, indent=2, sort_keys=True) + "\n"
         )
     except (OSError, KeyError, TypeError) as exc:
-        raise AtkDl16Error(f"cannot write filtered capture: {exc}") from exc
+        raise Dl16Error(f"cannot write filtered capture: {exc}") from exc
     return result

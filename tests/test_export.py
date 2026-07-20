@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.export import export_capture
+from dl16_cli.errors import ProtocolError
+from dl16_cli.export import export_capture
 
 
 def _capture_dir(tmp_path):
@@ -73,7 +73,7 @@ def test_export_rejects_truncated_channel_file(tmp_path):
 
 
 def test_cli_export_is_offline_and_reports_result(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     root = _capture_dir(tmp_path)
     output = tmp_path / "capture.vcd"

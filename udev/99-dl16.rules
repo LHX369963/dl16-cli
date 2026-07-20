@@ -1,4 +1,4 @@
-# ATK DL16 application and transport USB IDs. uaccess covers local desktop
+# DL16 application and transport USB IDs. uaccess covers local desktop
 # sessions; plugdev is the fallback for shells without a logind seat ACL.
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1a86", ATTR{idProduct}=="ffcc", GROUP="plugdev", MODE="0660", TAG+="uaccess"
 SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="1a86", ATTR{idProduct}=="6a6b", GROUP="plugdev", MODE="0660", TAG+="uaccess"

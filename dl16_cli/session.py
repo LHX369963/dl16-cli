@@ -7,8 +7,8 @@ from typing import Any, TextIO
 
 from .acquisition import capture_to_disk
 from .capture import SamplingParameters
-from .device import AtkDevice
-from .errors import AtkDl16Error
+from .device import Dl16Device
+from .errors import Dl16Error
 from .sampling import resolve_sample_index, validate_capture_combination
 from .streaming import stream_capture_to_disk
 from .trigger import TriggerState, parse_trigger_state
@@ -17,9 +17,9 @@ from .trigger import TriggerState, parse_trigger_state
 class Dl16Session:
     """A reusable DL16 connection that avoids reset/recovery between commands."""
 
-    def __init__(self, backend: Any, *, device: AtkDevice | Any | None = None) -> None:
+    def __init__(self, backend: Any, *, device: Dl16Device | Any | None = None) -> None:
         self.backend = backend
-        self.device = device if device is not None else AtkDevice(backend)
+        self.device = device if device is not None else Dl16Device(backend)
         self.is_open = False
 
     def open(self) -> "Dl16Session":
@@ -43,7 +43,7 @@ class Dl16Session:
 
     def _require_open(self) -> None:
         if not self.is_open:
-            raise AtkDl16Error("DL16 session is not open")
+            raise Dl16Error("DL16 session is not open")
 
     def pwm_start(self, channel: int, frequency_hz: int, duty_percent: float) -> None:
         self._require_open()
@@ -72,7 +72,7 @@ class Dl16Session:
             set_time = ((1 << 40) - 1) // (sample_rate_hz // 1_000)
         else:
             if not math.isfinite(duration_seconds) or duration_seconds <= 0:
-                raise AtkDl16Error("session stream duration_seconds must be positive and finite")
+                raise Dl16Error("session stream duration_seconds must be positive and finite")
             set_time = duration_seconds * 1000.0
         params = SamplingParameters(
             set_time=set_time,
@@ -114,9 +114,9 @@ class Dl16Session:
     ) -> dict:
         self._require_open()
         if rle and not buffer:
-            raise AtkDl16Error("session capture rle requires buffer")
+            raise Dl16Error("session capture rle requires buffer")
         if not math.isfinite(duration_ms) or duration_ms <= 0:
-            raise AtkDl16Error("session capture duration_ms must be positive and finite")
+            raise Dl16Error("session capture duration_ms must be positive and finite")
         validate_capture_combination(sample_rate_hz, len(channels), is_buffer=buffer)
         if trigger == "none":
             trigger_state = TriggerState.NULL
@@ -129,13 +129,13 @@ class Dl16Session:
             if trigger_states else None
         )
         if parsed_trigger_states and (trigger_state != TriggerState.NULL or trigger_channel is not None):
-            raise AtkDl16Error("session trigger_states cannot be combined with trigger or trigger_channel")
+            raise Dl16Error("session trigger_states cannot be combined with trigger or trigger_channel")
         if parsed_trigger_states and all(
             state == TriggerState.NULL for state in parsed_trigger_states.values()
         ):
-            raise AtkDl16Error("session trigger_states requires at least one active condition")
+            raise Dl16Error("session trigger_states requires at least one active condition")
         if trigger_state == TriggerState.NULL and trigger_channel is not None:
-            raise AtkDl16Error("session trigger_channel requires rising or falling trigger")
+            raise Dl16Error("session trigger_channel requires rising or falling trigger")
         params = SamplingParameters(
             set_time=duration_ms,
             set_hz=sample_rate_hz,
@@ -177,7 +177,7 @@ def run_json_session(session: Dl16Session, source: TextIO, output: TextIO) -> in
             try:
                 command = json.loads(line)
                 if not isinstance(command, dict):
-                    raise AtkDl16Error("session command must be a JSON object")
+                    raise Dl16Error("session command must be a JSON object")
                 op = command.get("op")
                 if op == "quit":
                     _emit(output, {"ok": True, "op": op})
@@ -212,7 +212,7 @@ def run_json_session(session: Dl16Session, source: TextIO, output: TextIO) -> in
                 elif op == "capture":
                     raw_trigger_states = command.get("trigger_states")
                     if raw_trigger_states is not None and not isinstance(raw_trigger_states, dict):
-                        raise AtkDl16Error("session trigger_states must be a JSON object")
+                        raise Dl16Error("session trigger_states must be a JSON object")
                     result = session.capture(
                         channels=[int(value) for value in command["channels"]],
                         sample_rate_hz=int(command["sample_rate_hz"]),
@@ -243,8 +243,8 @@ def run_json_session(session: Dl16Session, source: TextIO, output: TextIO) -> in
                     session.device.stop_no_response()
                     result = None
                 else:
-                    raise AtkDl16Error(f"unknown session operation: {op!r}")
+                    raise Dl16Error(f"unknown session operation: {op!r}")
                 _emit(output, {"ok": True, "op": op, "result": result})
-            except (AtkDl16Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            except (Dl16Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
                 _emit(output, {"ok": False, "error": str(exc)})
     return 0

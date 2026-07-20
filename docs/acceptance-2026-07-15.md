@@ -1,6 +1,6 @@
 # DL16 CLI acceptance — 2026-07-15
 
-Target: ATK DL16 (`1a86:ffcc`) with PWM0/PWM1 looped to CH7/CH6. Other models
+Target: DL16 (`1a86:ffcc`) with PWM0/PWM1 looped to CH7/CH6. Other models
 are outside this acceptance scope.
 
 ## Result matrix
@@ -50,11 +50,11 @@ channel count, and sample rate.
 
 ```bash
 pytest -q
-python -m compileall -q atkdl16_cli
+python -m compileall -q dl16_cli
 python -m pip wheel . --no-deps -w /tmp/dl16-wheel
 python -m venv /tmp/dl16-venv
 /tmp/dl16-venv/bin/pip install --no-deps /tmp/dl16-wheel/*.whl
-/tmp/dl16-venv/bin/atkdl16 --dry-run list
+/tmp/dl16-venv/bin/dl16 --dry-run list
 ```
 
 Raw live-capture artifacts are kept under the local ignored `reverse/`

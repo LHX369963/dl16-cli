@@ -1,4 +1,4 @@
 interface:
   display_name: "DL16 CLI"
-  short_description: "Operate and validate the ATK DL16 through its CLI"
-  default_prompt: "Use $dl16-cli to operate or validate the connected DL16 safely through atkdl16."
+  short_description: "Operate and validate the DL16 through its CLI"
+  default_prompt: "Use $dl16-cli to operate or validate the connected DL16 safely through dl16."

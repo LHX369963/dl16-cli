@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.filtering import filter_glitches
+from dl16_cli.errors import ProtocolError
+from dl16_cli.filtering import filter_glitches
 
 
 def _write_capture(tmp_path):
@@ -40,7 +40,7 @@ def test_glitch_filter_refuses_in_place_operation(tmp_path):
 
 
 def test_cli_glitch_filter_is_offline(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     source = _write_capture(tmp_path)
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: pytest.fail("USB opened"))

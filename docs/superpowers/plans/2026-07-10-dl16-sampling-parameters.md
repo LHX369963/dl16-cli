@@ -1,10 +1,10 @@
-# ATK DL16 Sampling Parameter Implementation Plan
+# DL16 Sampling Parameter Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the recovered 13-byte `ParameterSetting` payload and expose it through `capture configure` CLI.
 
-**Architecture:** Add a pure builder in `capture.py`, call it through `AtkDevice`, and retain dry-run/non-dry-run behavior through existing backends.
+**Architecture:** Add a pure builder in `capture.py`, call it through `Dl16Device`, and retain dry-run/non-dry-run behavior through existing backends.
 
 **Tech Stack:** Python 3.10+, pytest.
 
@@ -31,7 +31,7 @@ Stream/collect type 3 rejects RLE and Buffer.
 
 ### Task 1: Pure payload builder
 
-Files: `atkdl16_cli/capture.py`, `tests/test_capture.py`
+Files: `dl16_cli/capture.py`, `tests/test_capture.py`
 
 - [ ] Write tests for flags, threshold encoding, little-endian 40-bit fields, validation, and stream incompatibility.
 - [ ] Verify tests fail because module is absent.
@@ -40,7 +40,7 @@ Files: `atkdl16_cli/capture.py`, `tests/test_capture.py`
 
 ### Task 2: Device and CLI integration
 
-Files: `atkdl16_cli/device.py`, `atkdl16_cli/cli.py`, `tests/test_device.py`, `tests/test_cli.py`
+Files: `dl16_cli/device.py`, `dl16_cli/cli.py`, `tests/test_device.py`, `tests/test_cli.py`
 
 - [ ] Write tests for device sending command `0x11` and `capture configure` dry-run/non-dry-run behavior.
 - [ ] Verify tests fail.

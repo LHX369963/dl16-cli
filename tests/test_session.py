@@ -1,7 +1,7 @@
 import io
 import json
 
-from atkdl16_cli.session import Dl16Session, run_json_session
+from dl16_cli.session import Dl16Session, run_json_session
 
 
 class FakeBackend:
@@ -40,7 +40,7 @@ class FakeDevice:
 def test_session_initializes_once_across_multiple_operations(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(
-        "atkdl16_cli.session.stream_capture_to_disk",
+        "dl16_cli.session.stream_capture_to_disk",
         lambda device, backend, params, **kwargs: calls.append((params, kwargs)) or {"sample_depth": 8},
     )
     device = FakeDevice()
@@ -77,7 +77,7 @@ def test_json_session_processes_commands_and_returns_one_json_line_each(monkeypa
 def test_session_capture_supports_buffer_without_reinitializing(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(
-        "atkdl16_cli.session.capture_to_disk",
+        "dl16_cli.session.capture_to_disk",
         lambda device, backend, params, **kwargs: calls.append((params, kwargs)) or {"mode": "buffer"},
     )
     device = FakeDevice()
@@ -94,13 +94,13 @@ def test_session_capture_supports_buffer_without_reinitializing(monkeypatch, tmp
 
 
 def test_cli_session_reads_jsonl_command_file_over_one_connection(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = FakeBackend()
     opens = []
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
     monkeypatch.setattr(
-        cli.AtkDevice, "initialize_connection", lambda self: opens.append(True) or b"DL16"
+        cli.Dl16Device, "initialize_connection", lambda self: opens.append(True) or b"DL16"
     )
     commands = tmp_path / "commands.jsonl"
     commands.write_text('{"op":"pwm_start","channel":0,"frequency_hz":1000,"duty_percent":25}\n{"op":"quit"}\n')

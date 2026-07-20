@@ -1,6 +1,6 @@
 ---
 name: dl16-cli
-description: Operate, test, debug, or document the ATK DL16 logic analyzer through the public atkdl16 CLI, including PWM, Stream/Buffer/RLE capture, triggers, persistent sessions, measurement, search, filtering, export, and protocol decoding. Use for DL16 hardware work, atkdl16 command changes, connected validation, capture analysis, or deployment of this CLI; do not apply it to DL32 or other models.
+description: Operate, test, debug, or document the DL16 logic analyzer through the public dl16 CLI, including PWM, Stream/Buffer/RLE capture, triggers, persistent sessions, measurement, search, filtering, export, and protocol decoding. Use for DL16 hardware work, dl16 command changes, connected validation, capture analysis, or deployment of this CLI; do not apply it to DL32 or other models.
 ---
 
 # DL16 CLI
@@ -13,21 +13,21 @@ Treat DL16 as the only supported model. Do not infer DL32 behavior from shared v
 
 ## Use The Public CLI
 
-Use `atkdl16` for device work. Prefer the repository's `.venv/bin/atkdl16` when present, otherwise use the PATH entry point. Inspect `atkdl16 <command> --help` before using unfamiliar parameters.
+Use `dl16` for device work. Prefer the repository's `.venv/bin/dl16` when present, otherwise use the PATH entry point. Inspect `dl16 <command> --help` before using unfamiliar parameters.
 
-Do not call `atkdl16_cli` Python internals, libusb, or raw protocol functions when a CLI workflow exists. Never issue the USB `SET_CONFIGURATION` operation; the project intentionally avoids it because it breaks the DL16 link.
+Do not call `dl16_cli` Python internals, libusb, or raw protocol functions when a CLI workflow exists. Never issue the USB `SET_CONFIGURATION` operation; the project intentionally avoids it because it breaks the DL16 link.
 
 Start diagnosis with:
 
 ```bash
-atkdl16 --dry-run list
-atkdl16 list
-atkdl16 info
+dl16 --dry-run list
+dl16 list
+dl16 info
 ```
 
 Use `capture run` for finite Stream/Buffer/RLE acquisition and `capture stream` for incremental long-running capture. Let the CLI choose `--sample-index` unless investigating the mapping itself. Respect the channel/rate limits in `README.md`.
 
-Use `atkdl16 session` for workflows that configure multiple PWM outputs and then capture. Separate CLI processes reinitialize USB/FPGA state. JSONL is the session transport, not a replacement for the CLI.
+Use `dl16 session` for workflows that configure multiple PWM outputs and then capture. Separate CLI processes reinitialize USB/FPGA state. JSONL is the session transport, not a replacement for the CLI.
 
 ## Protect Data And Hardware State
 

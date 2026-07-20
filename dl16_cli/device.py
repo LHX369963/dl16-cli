@@ -23,7 +23,7 @@ def _build_link_info_query() -> bytes:
     return b"\x0a\x81\x0b".ljust(510, b"\x00")
 
 
-class AtkDevice:
+class Dl16Device:
     def __init__(self, backend: UsbBackend) -> None:
         self.backend = backend
         self.last_response = b""

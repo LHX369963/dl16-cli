@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.sampling import (
+from dl16_cli.errors import ProtocolError
+from dl16_cli.sampling import (
     SAMPLE_RATE_TO_INDEX,
     resolve_sample_index,
     validate_capture_combination,

@@ -1,6 +1,6 @@
 import json
 
-from atkdl16_cli.decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
+from dl16_cli.decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
 
 
 def _write_capture(tmp_path, rate, signals):
@@ -77,7 +77,7 @@ def test_spi_mode0_decodes_mosi_on_rising_edges(tmp_path):
 
 
 def test_cli_uart_decode_is_offline_and_can_write_json(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     levels = [1] * 10 + [0] * 10
     for bit in range(8):

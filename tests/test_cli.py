@@ -1,6 +1,6 @@
 import pytest
 
-from atkdl16_cli.cli import main
+from dl16_cli.cli import main
 
 
 def test_cli_list_dry_run_prints_supported_ids(capsys):
@@ -69,7 +69,7 @@ class CliFakeBackend:
 
 
 def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     CliFakeBackend.instances.clear()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
@@ -81,7 +81,7 @@ def test_create_backend_non_dry_run_can_be_monkeypatched(monkeypatch, capsys):
 
 
 def test_cli_non_dry_run_stop_uses_backend_factory(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     CliFakeBackend.instances.clear()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
@@ -93,7 +93,7 @@ def test_cli_non_dry_run_stop_uses_backend_factory(monkeypatch, capsys):
 
 
 def test_cli_non_dry_run_pwm_start_uses_backend_factory(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     CliFakeBackend.instances.clear()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
@@ -127,7 +127,7 @@ def test_cli_raw_trigger_dry_run_prints_frames(capsys):
 
 
 def test_cli_raw_non_dry_run_uses_backend_factory(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     CliFakeBackend.instances.clear()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
@@ -154,7 +154,7 @@ def test_cli_capture_configure_dry_run_prints_recovered_payload(capsys):
 
 
 def test_cli_capture_configure_non_dry_run_uses_backend(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     CliFakeBackend.instances.clear()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
@@ -222,7 +222,7 @@ def test_cli_capture_parse_prints_json_lines_for_saved_wire_stream(tmp_path, cap
 def test_cli_capture_read_writes_lossless_packets_from_fragmented_usb_chunks(
     monkeypatch, tmp_path, capsys
 ):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     first = _capture_packet(1, b"\x01\x00abc")
     second = _capture_packet(5, b"\x02\x00done")
@@ -241,7 +241,7 @@ def test_cli_capture_read_writes_lossless_packets_from_fragmented_usb_chunks(
 def test_cli_capture_read_reports_end_of_stream_before_requested_count(
     monkeypatch, tmp_path, capsys
 ):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
@@ -275,7 +275,7 @@ def test_cli_capture_decode_exports_per_channel_packed_samples_and_manifest(tmp_
 def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer(
     monkeypatch, tmp_path, capsys
 ):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     sample_data = b"\x55" * 125 + b"\xaa" * 12
@@ -287,7 +287,7 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer
     sleeps = []
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
     monkeypatch.setattr(
-        cli.AtkDevice,
+        cli.Dl16Device,
         "initialize_connection",
         lambda self: initialized.append(True) or b"DL16",
     )
@@ -315,14 +315,14 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer
 
 
 def test_cli_capture_run_buffer_sets_original_buffer_bit(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [
         _capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     rc = cli.main([
         "capture", "run", "--buffer", "--channel", "6", "--set-time", "1",
@@ -336,7 +336,7 @@ def test_cli_capture_run_buffer_sets_original_buffer_bit(monkeypatch, tmp_path):
 
 
 def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     ch6 = b"\x66" * 125 + b"\xa6" * 12
@@ -348,7 +348,7 @@ def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp
         + _capture_packet(1, b"\x07\x00" + ch7[90:]),
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / "multi"
     rc = cli.main([
@@ -366,7 +366,7 @@ def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp
 
 
 def test_cli_capture_stream_writes_incrementally_without_buffer_flag(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [
@@ -374,7 +374,7 @@ def test_cli_capture_stream_writes_incrementally_without_buffer_flag(monkeypatch
         + _capture_packet(1, b"\x07\x00" + b"\x77" * 125 + b"\xa7" * 12)
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / "stream"
     assert cli.main([
@@ -399,12 +399,12 @@ def test_cli_capture_run_rejects_duplicate_channels(capsys, tmp_path):
 
 
 def test_cli_capture_run_refuses_to_replace_existing_capture(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     (tmp_path / "manifest.json").write_text("old")
     backend = CliFakeBackend()
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: pytest.fail("USB initialized"))
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: pytest.fail("USB initialized"))
     rc = cli.main([
         "capture", "run", "--channel", "7", "--set-time", "1",
         "--sample-rate", "1000000", "--output-dir", str(tmp_path),
@@ -414,7 +414,7 @@ def test_cli_capture_run_refuses_to_replace_existing_capture(monkeypatch, tmp_pa
 
 
 def test_cli_capture_run_buffer_rle_decodes_online(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     # RLE uses one expanded packed-byte trailer (ordinary Buffer uses 12).
@@ -422,7 +422,7 @@ def test_cli_capture_run_buffer_rle_decodes_online(monkeypatch, tmp_path):
         _capture_packet(1, b"\x06\x00" + bytes((125, 0x66, 1, 0xA6)))
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / "rle"
     rc = cli.main([
@@ -441,7 +441,7 @@ def test_cli_capture_run_buffer_rle_decodes_online(monkeypatch, tmp_path):
 
 
 def test_cli_capture_run_rle_accepts_hardware_shortened_capture(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [
@@ -449,7 +449,7 @@ def test_cli_capture_run_rle_accepts_hardware_shortened_capture(monkeypatch, tmp
         + _capture_packet(6, b"\x00\x00")
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / "short-rle"
     rc = cli.main([
@@ -476,12 +476,12 @@ def test_cli_capture_run_rejects_rle_without_buffer(capsys, tmp_path):
 
 
 def test_cli_capture_run_automatically_selects_sample_index(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [_capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     rc = cli.main([
         "capture", "run", "--channel", "6", "--set-time", "1",
@@ -509,12 +509,12 @@ def test_cli_capture_run_rejects_stream_channel_limit_before_usb(capsys, tmp_pat
     ]
 )
 def test_cli_capture_run_sends_edge_trigger(monkeypatch, tmp_path, edge, trigger_byte):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [_capture_packet(1, b"\x06\x00" + b"\x55" * 125 + b"\x00" * 12)]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / edge
     rc = cli.main([
@@ -529,7 +529,7 @@ def test_cli_capture_run_sends_edge_trigger(monkeypatch, tmp_path, edge, trigger
 
 
 def test_cli_capture_run_sends_multi_channel_and_trigger(monkeypatch, tmp_path):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [
@@ -537,7 +537,7 @@ def test_cli_capture_run_sends_multi_channel_and_trigger(monkeypatch, tmp_path):
         + _capture_packet(1, b"\x0f\x00" + b"\x55" * 125 + b"\x00" * 12)
     ]
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     output = tmp_path / "multi-trigger"
     assert cli.main([
@@ -565,15 +565,15 @@ def test_cli_capture_run_rejects_trigger_channel_that_is_not_captured(capsys, tm
 
 def test_cli_capture_run_times_out_when_trigger_never_matches(monkeypatch, tmp_path, capsys):
     import itertools
-    import atkdl16_cli.acquisition as acquisition
-    import atkdl16_cli.cli as cli
+    import dl16_cli.acquisition as acquisition
+    import dl16_cli.cli as cli
 
     backend = CliFakeBackend()
     backend.read_chunks = [_capture_packet(4, b"\xff\x00\x12\x03")]
     device_stops = []
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: backend)
-    monkeypatch.setattr(cli.AtkDevice, "initialize_connection", lambda self: b"DL16")
-    monkeypatch.setattr(cli.AtkDevice, "stop_no_response", lambda self: device_stops.append(True))
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.Dl16Device, "stop_no_response", lambda self: device_stops.append(True))
     monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
     clock = itertools.chain([0.0], itertools.repeat(2.0))
     monkeypatch.setattr(acquisition.time, "monotonic", lambda: next(clock))

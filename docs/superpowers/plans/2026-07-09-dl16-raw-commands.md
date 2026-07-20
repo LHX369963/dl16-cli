@@ -1,4 +1,4 @@
-# ATK DL16 Raw Command CLI Implementation Plan
+# DL16 Raw Command CLI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -20,7 +20,7 @@
 
 ### Task 1: Hex payload parsing
 
-Files: `atkdl16_cli/protocol.py`, `tests/test_protocol.py`
+Files: `dl16_cli/protocol.py`, `tests/test_protocol.py`
 
 - [ ] Add tests for `parse_hex_payload("11 22 aa") == b"\x11\x22\xaa"`, empty string as `b""`, and malformed odd/non-hex values raising `ProtocolError`.
 - [ ] Run targeted tests and confirm failure.
@@ -29,7 +29,7 @@ Files: `atkdl16_cli/protocol.py`, `tests/test_protocol.py`
 
 ### Task 2: Device raw command methods
 
-Files: `atkdl16_cli/device.py`, `tests/test_device.py`
+Files: `dl16_cli/device.py`, `tests/test_device.py`
 
 - [ ] Add tests for `parameter_setting_raw`, `simple_trigger_raw`, `stage_trigger_raw`, and `serial_trigger_raw` sending the expected command frames.
 - [ ] Run targeted tests and confirm failure.
@@ -38,7 +38,7 @@ Files: `atkdl16_cli/device.py`, `tests/test_device.py`
 
 ### Task 3: CLI raw command group
 
-Files: `atkdl16_cli/cli.py`, `tests/test_cli.py`
+Files: `dl16_cli/cli.py`, `tests/test_cli.py`
 
 - [ ] Add dry-run CLI tests for `raw parameter-setting --payload-hex`, `raw simple-trigger`, `raw stage-trigger`, and `raw serial-trigger`.
 - [ ] Add non-dry-run fake backend test for one raw command.

@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.pwm import PWM_BASE_HZ, PWM_MAX_HZ, build_pwm_start_payload, build_pwm_stop_payload
+from dl16_cli.errors import ProtocolError
+from dl16_cli.pwm import PWM_BASE_HZ, PWM_MAX_HZ, build_pwm_start_payload, build_pwm_stop_payload
 
 
 def test_pwm_base_frequency_matches_reverse_evidence():

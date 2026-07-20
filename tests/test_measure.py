@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from atkdl16_cli.measure import measure_pwm_capture
+from dl16_cli.measure import measure_pwm_capture
 
 
 def _write_pwm(tmp_path, *, rate=1_000_000, period=100, high=25, periods=20):
@@ -32,7 +32,7 @@ def test_measure_pwm_uses_complete_rising_edge_periods(tmp_path):
 
 
 def test_cli_measure_is_offline(tmp_path, monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     _write_pwm(tmp_path, high=75)
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: pytest.fail("USB opened"))

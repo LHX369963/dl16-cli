@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "atkdl16-cli"
+name = "dl16-cli"
 version = "0.1.0"
-description = "Command-line reverse-engineered control utility for ATK DL16 logic analyzer"
+description = "Command-line reverse-engineered control utility for DL16 logic analyzer"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
@@ -15,10 +15,10 @@ test = ["pytest>=8"]
 usb = ["pyusb>=1.2"]
 
 [project.scripts]
-atkdl16 = "atkdl16_cli.cli:main"
+dl16 = "dl16_cli.cli:main"
 
 [tool.setuptools]
-packages = ["atkdl16_cli"]
+packages = ["dl16_cli"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

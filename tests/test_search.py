@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from atkdl16_cli.search import search_capture
-from atkdl16_cli.trigger import TriggerState
+from dl16_cli.search import search_capture
+from dl16_cli.trigger import TriggerState
 
 
 def _write_capture(tmp_path):
@@ -41,7 +41,7 @@ def test_search_combines_channel_conditions_and_honors_limit(tmp_path):
 
 
 def test_cli_search_is_offline(monkeypatch, tmp_path, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     _write_capture(tmp_path)
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: pytest.fail("USB opened"))

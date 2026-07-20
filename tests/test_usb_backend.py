@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.usb import PyUsbUnavailableError, is_supported_usb_id, parse_usb_id
+from dl16_cli.errors import ProtocolError
+from dl16_cli.usb import PyUsbUnavailableError, is_supported_usb_id, parse_usb_id
 
 
 def test_parse_usb_id_accepts_lower_and_upper_hex():
@@ -23,7 +23,7 @@ def test_is_supported_usb_id_matches_reverse_evidence():
 
 
 def test_pyusb_unavailable_error_is_usb_backend_error():
-    from atkdl16_cli.errors import UsbBackendError
+    from dl16_cli.errors import UsbBackendError
 
     assert issubclass(PyUsbUnavailableError, UsbBackendError)
 
@@ -126,7 +126,7 @@ def make_supported_fake_device():
 
 
 def test_pyusb_backend_lists_only_supported_devices():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     supported, _, _ = make_supported_fake_device()
     unsupported = FakeDevice(0x1234, 0x5678)
@@ -135,7 +135,7 @@ def test_pyusb_backend_lists_only_supported_devices():
 
 
 def test_pyusb_backend_open_claims_interface_without_resetting_active_configuration():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     dev, out_ep, in_ep = make_supported_fake_device()
     backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
@@ -148,8 +148,8 @@ def test_pyusb_backend_open_claims_interface_without_resetting_active_configurat
 
 
 def test_pyusb_backend_open_wraps_permission_error_with_udev_hint():
-    from atkdl16_cli.errors import UsbBackendError
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.errors import UsbBackendError
+    from dl16_cli.usb import PyUsbBackend
 
     class PermissionUtil(FakeUtil):
         @staticmethod
@@ -160,12 +160,12 @@ def test_pyusb_backend_open_wraps_permission_error_with_udev_hint():
 
     dev, _, _ = make_supported_fake_device()
     backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=PermissionUtil)
-    with pytest.raises(UsbBackendError, match="udev/99-atk-dl16.rules"):
+    with pytest.raises(UsbBackendError, match="udev/99-dl16.rules"):
         backend.open()
 
 
 def test_pyusb_backend_close_releases_interface_and_disposes_resources():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     dev, _, _ = make_supported_fake_device()
     backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
@@ -176,7 +176,7 @@ def test_pyusb_backend_close_releases_interface_and_disposes_resources():
 
 
 def test_pyusb_backend_recover_ffcc_link_clears_endpoints_resets_and_reopens():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     dev, out_ep, in_ep = make_supported_fake_device()
     backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=FakeUtil)
@@ -202,7 +202,7 @@ class FakeIoEndpoint(FakeEndpoint):
 
 
 def test_ffcc_transport_interleave_matches_recovered_four_word_lanes():
-    from atkdl16_cli.usb import encode_ffcc_transport
+    from dl16_cli.usb import encode_ffcc_transport
 
     logical = b"".join(index.to_bytes(2, "little") for index in range(1024))
     wire = encode_ffcc_transport(logical)
@@ -213,14 +213,14 @@ def test_ffcc_transport_interleave_matches_recovered_four_word_lanes():
 
 
 def test_ffcc_transport_decode_reverses_interleave():
-    from atkdl16_cli.usb import decode_ffcc_transport, encode_ffcc_transport
+    from dl16_cli.usb import decode_ffcc_transport, encode_ffcc_transport
 
     logical = bytes(range(256)) * 8
     assert decode_ffcc_transport(encode_ffcc_transport(logical)) == logical
 
 
 def test_pyusb_backend_send_frame_pads_and_interleaves_ffcc_normal_command():
-    from atkdl16_cli.usb import PyUsbBackend, encode_ffcc_transport
+    from dl16_cli.usb import PyUsbBackend, encode_ffcc_transport
 
     out_ep = FakeIoEndpoint(0x02, 512)
     logical_response = b"\x12\x34" + bytes(2046)
@@ -236,7 +236,7 @@ def test_pyusb_backend_send_frame_pads_and_interleaves_ffcc_normal_command():
 
 
 def test_pyusb_backend_write_frame_uses_ffcc_transport_without_reading():
-    from atkdl16_cli.usb import PyUsbBackend, encode_ffcc_transport
+    from dl16_cli.usb import PyUsbBackend, encode_ffcc_transport
 
     out_ep = FakeIoEndpoint(0x02, 512)
     in_ep = FakeIoEndpoint(0x81, 512, read_data=b"unused")
@@ -249,7 +249,7 @@ def test_pyusb_backend_write_frame_uses_ffcc_transport_without_reading():
 
 
 def test_pyusb_backend_read_chunk_decodes_large_ffcc_capture_transfer():
-    from atkdl16_cli.usb import PyUsbBackend, encode_ffcc_transport
+    from dl16_cli.usb import PyUsbBackend, encode_ffcc_transport
 
     logical = (b"\x0a\x06\x03\x00\xff\x00\x00\x00\x0b").ljust(16384, b"\x00")
     out_ep = FakeIoEndpoint(0x02, 512)
@@ -260,7 +260,7 @@ def test_pyusb_backend_read_chunk_decodes_large_ffcc_capture_transfer():
 
 
 def test_pyusb_backend_read_chunk_opens_and_reads_bulk_in_without_writing():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     out_ep = FakeIoEndpoint(0x02, 512)
     in_ep = FakeIoEndpoint(0x81, 512, read_data=b"capture")
@@ -274,7 +274,7 @@ def test_pyusb_backend_read_chunk_opens_and_reads_bulk_in_without_writing():
 
 
 def test_pyusb_backend_read_chunk_allows_size_and_timeout_override():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     out_ep = FakeIoEndpoint(0x02, 512)
     in_ep = FakeIoEndpoint(0x81, 512, read_data=b"abc")
@@ -285,7 +285,7 @@ def test_pyusb_backend_read_chunk_allows_size_and_timeout_override():
 
 
 def test_dry_run_backend_returns_queued_read_chunks():
-    from atkdl16_cli.usb import DryRunBackend
+    from dl16_cli.usb import DryRunBackend
 
     backend = DryRunBackend(read_chunks=[b"one", b"two"])
     assert backend.read_chunk() == b"one"
@@ -294,7 +294,7 @@ def test_dry_run_backend_returns_queued_read_chunks():
 
 
 def test_pyusb_backend_write_chunk_does_not_consume_ack():
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.usb import PyUsbBackend
 
     out_ep = FakeIoEndpoint(0x02, 512)
     in_ep = FakeIoEndpoint(0x81, 512, read_data=b"ack")
@@ -308,7 +308,7 @@ def test_pyusb_backend_write_chunk_does_not_consume_ack():
 
 
 def test_dry_run_backend_records_write_chunks_separately():
-    from atkdl16_cli.usb import DryRunBackend
+    from dl16_cli.usb import DryRunBackend
 
     backend = DryRunBackend()
     assert backend.write_chunk(b"one") == 3
@@ -316,8 +316,8 @@ def test_dry_run_backend_records_write_chunks_separately():
 
 
 def test_pyusb_backend_wraps_endpoint_io_errors():
-    from atkdl16_cli.errors import UsbBackendError
-    from atkdl16_cli.usb import PyUsbBackend
+    from dl16_cli.errors import UsbBackendError
+    from dl16_cli.usb import PyUsbBackend
 
     class BrokenEndpoint(FakeIoEndpoint):
         def write(self, data, timeout=None):

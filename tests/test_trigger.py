@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.trigger import TriggerState, build_simple_trigger_payload, pack_trigger_states, parse_trigger_states
+from dl16_cli.errors import ProtocolError
+from dl16_cli.trigger import TriggerState, build_simple_trigger_payload, pack_trigger_states, parse_trigger_states
 
 
 def test_trigger_state_nibble_map_matches_jump_table():
@@ -59,7 +59,7 @@ def test_trigger_state_parser_rejects_invalid_input(text):
 
 
 def test_stage_trigger_payload_matches_recovered_layout():
-    from atkdl16_cli.trigger import StageCondition, build_stage_trigger_payload
+    from dl16_cli.trigger import StageCondition, build_stage_trigger_payload
 
     stages = [
         StageCondition([TriggerState.RISING, TriggerState.HIGH], counter=0x1234, contiguous=False),
@@ -72,7 +72,7 @@ def test_stage_trigger_payload_matches_recovered_layout():
 
 
 def test_stage_trigger_applies_enabled_mask_and_channel_offset():
-    from atkdl16_cli.trigger import StageCondition, build_stage_trigger_payload
+    from dl16_cli.trigger import StageCondition, build_stage_trigger_payload
 
     payload = build_stage_trigger_payload(
         [StageCondition([TriggerState.NULL, TriggerState.RISING], counter=0, contiguous=True)],
@@ -84,7 +84,7 @@ def test_stage_trigger_applies_enabled_mask_and_channel_offset():
 
 
 def test_serial_trigger_payload_matches_recovered_layout():
-    from atkdl16_cli.trigger import SerialTriggerConfig, build_serial_trigger_payload
+    from dl16_cli.trigger import SerialTriggerConfig, build_serial_trigger_payload
 
     config = SerialTriggerConfig(
         value_channel=1,
@@ -102,9 +102,9 @@ def test_serial_trigger_payload_matches_recovered_layout():
 @pytest.mark.parametrize(
     "builder",
     [
-        lambda: __import__("atkdl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload([], trigger_level=0),
-        lambda: __import__("atkdl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload(
-            [__import__("atkdl16_cli.trigger", fromlist=["*"]).StageCondition([TriggerState.RISING], 70000, True)],
+        lambda: __import__("dl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload([], trigger_level=0),
+        lambda: __import__("dl16_cli.trigger", fromlist=["*"]).build_stage_trigger_payload(
+            [__import__("dl16_cli.trigger", fromlist=["*"]).StageCondition([TriggerState.RISING], 70000, True)],
             trigger_level=0,
         ),
     ],

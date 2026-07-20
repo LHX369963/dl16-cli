@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .capture import Dl16StreamParser, SamplingParameters, decode_channel_packet
-from .errors import AtkDl16Error
+from .errors import Dl16Error
 from .storage import prepare_capture_directory
 from .trigger import TriggerState
 
@@ -28,18 +28,18 @@ def stream_capture_to_disk(
     """Capture Stream-mode packets directly to disk, retaining partial data on Ctrl-C."""
     channels = list(channels)
     if not channels or len(set(channels)) != len(channels):
-        raise AtkDl16Error("stream channels must be non-empty and unique")
+        raise Dl16Error("stream channels must be non-empty and unique")
     if any(channel < 0 or channel > 15 for channel in channels):
-        raise AtkDl16Error("stream channels must be in range 0..15")
+        raise Dl16Error("stream channels must be in range 0..15")
     if params.is_buffer or params.is_rle:
-        raise AtkDl16Error("incremental stream capture cannot use Buffer or RLE")
+        raise Dl16Error("incremental stream capture cannot use Buffer or RLE")
     if read_size <= 0 or read_size % 2048:
-        raise AtkDl16Error("stream read-size must be a positive multiple of 2048")
+        raise Dl16Error("stream read-size must be a positive multiple of 2048")
 
     depth = int(params.set_time * (params.set_hz // 1_000))
     expected_bytes = (depth + 7) // 8
     if expected_bytes <= 0:
-        raise AtkDl16Error("stream depth must contain at least one sample")
+        raise Dl16Error("stream depth must contain at least one sample")
     # Sample bytes precede a device-dependent completion trailer in the last
     # packet (8 bytes observed in DL16 Stream, 12 in older captures).  Stop on
     # the requested sample count and discard any same-packet suffix instead of
@@ -80,7 +80,7 @@ def stream_capture_to_disk(
                             f"CH{channel}={count}/{target_wire_bytes}"
                             for channel, count in written.items()
                         )
-                        raise AtkDl16Error(f"stream ended before requested depth ({progress})")
+                        raise Dl16Error(f"stream ended before requested depth ({progress})")
                     for packet in parser.feed(chunk):
                         wire.write(packet.raw)
                         wire_bytes += len(packet.raw)
@@ -111,10 +111,10 @@ def stream_capture_to_disk(
             for handle in files.values():
                 handle.truncate(retained_bytes)
                 handle.flush()
-    except AtkDl16Error:
+    except Dl16Error:
         raise
     except OSError as exc:
-        raise AtkDl16Error(f"cannot write stream capture to {output_dir!r}: {exc}") from exc
+        raise Dl16Error(f"cannot write stream capture to {output_dir!r}: {exc}") from exc
     finally:
         if started:
             device.stop_no_response()
@@ -148,5 +148,5 @@ def stream_capture_to_disk(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         )
     except OSError as exc:
-        raise AtkDl16Error(f"cannot write stream manifest: {exc}") from exc
+        raise Dl16Error(f"cannot write stream manifest: {exc}") from exc
     return manifest

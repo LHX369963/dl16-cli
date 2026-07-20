@@ -8,7 +8,7 @@ from contextlib import ExitStack
 from pathlib import Path
 
 from .capture import Dl16StreamParser, SamplingParameters, decode_channel_packet
-from .errors import AtkDl16Error
+from .errors import Dl16Error
 from .storage import prepare_capture_directory
 from .trigger import TriggerState
 from .usb import UsbBackend
@@ -38,30 +38,30 @@ def capture_to_disk(
 
     channels = list(channels)
     if not channels:
-        raise AtkDl16Error("at least one capture channel is required")
+        raise Dl16Error("at least one capture channel is required")
     if len(set(channels)) != len(channels):
-        raise AtkDl16Error("duplicate channel in capture channel list")
+        raise Dl16Error("duplicate channel in capture channel list")
     if any(not 0 <= channel <= 15 for channel in channels):
-        raise AtkDl16Error("capture channels must be in range 0..15")
+        raise Dl16Error("capture channels must be in range 0..15")
     if trigger_states and trigger_state != TriggerState.NULL:
-        raise AtkDl16Error("use either trigger_state or trigger_states, not both")
+        raise Dl16Error("use either trigger_state or trigger_states, not both")
     if trigger_states:
         invalid = [channel for channel in trigger_states if channel not in channels]
         if invalid:
-            raise AtkDl16Error(f"trigger channel {invalid[0]} must be one of the captured channels")
+            raise Dl16Error(f"trigger channel {invalid[0]} must be one of the captured channels")
     elif trigger_state != TriggerState.NULL:
         trigger_channel = channels[0] if trigger_channel is None else trigger_channel
         if trigger_channel not in channels:
-            raise AtkDl16Error("trigger channel must be one of the captured channels")
+            raise Dl16Error("trigger channel must be one of the captured channels")
     if read_size <= 0 or read_size % 2048:
-        raise AtkDl16Error("capture read-size must be a positive multiple of 2048")
+        raise Dl16Error("capture read-size must be a positive multiple of 2048")
     if not math.isfinite(trigger_timeout_seconds) or trigger_timeout_seconds <= 0:
-        raise AtkDl16Error("trigger timeout must be positive and finite")
+        raise Dl16Error("trigger timeout must be positive and finite")
 
     depth = int(params.set_time * (params.set_hz // 1_000))
     expected_bytes = (depth + 7) // 8
     if expected_bytes == 0:
-        raise AtkDl16Error("capture depth must contain at least one sample")
+        raise Dl16Error("capture depth must contain at least one sample")
 
     destination = prepare_capture_directory(output_dir, overwrite=overwrite)
     stack = ExitStack()
@@ -75,7 +75,7 @@ def capture_to_disk(
         }
     except OSError as exc:
         stack.close()
-        raise AtkDl16Error(f"cannot create capture output {str(output_dir)!r}: {exc}") from exc
+        raise Dl16Error(f"cannot create capture output {str(output_dir)!r}: {exc}") from exc
 
     states = [TriggerState.NULL] * 16
     if trigger_states:
@@ -105,7 +105,7 @@ def capture_to_disk(
         )
         while any(count < target_wire_bytes for count in written.values()):
             if trigger_deadline is not None and not sample_started and time.monotonic() >= trigger_deadline:
-                raise AtkDl16Error(
+                raise Dl16Error(
                     f"trigger was not satisfied within {trigger_timeout_seconds:g} seconds"
                 )
             chunk = backend.read_chunk(size=read_size)
@@ -113,7 +113,7 @@ def capture_to_disk(
                 progress = ", ".join(
                     f"CH{channel}={count}/{target_wire_bytes}" for channel, count in written.items()
                 )
-                raise AtkDl16Error(f"capture stream ended before all channels completed ({progress})")
+                raise Dl16Error(f"capture stream ended before all channels completed ({progress})")
             for packet in parser.feed(chunk):
                 wire_stream.write(packet.raw)
                 if (
@@ -133,10 +133,10 @@ def capture_to_disk(
             if hardware_complete:
                 break
         sleep_fn(0.07)
-    except AtkDl16Error:
+    except Dl16Error:
         raise
     except OSError as exc:
-        raise AtkDl16Error(f"cannot write capture output {str(output_dir)!r}: {exc}") from exc
+        raise Dl16Error(f"cannot write capture output {str(output_dir)!r}: {exc}") from exc
     finally:
         stack.close()
         if capture_started:
@@ -152,7 +152,7 @@ def capture_to_disk(
             retained[channel] = min(count, expected_bytes)
     for channel, count in retained.items():
         if count != expected_bytes and not (params.is_rle and hardware_complete and count):
-            raise AtkDl16Error(
+            raise Dl16Error(
                 f"CH{channel} returned {count} of {expected_bytes} expected packed sample bytes"
             )
     actual_depth = min(min(count * 8, depth) for count in retained.values())
@@ -201,5 +201,5 @@ def capture_to_disk(
             json.dumps(manifest, indent=2, sort_keys=True) + "\n"
         )
     except OSError as exc:
-        raise AtkDl16Error(f"cannot write capture output {str(output_dir)!r}: {exc}") from exc
+        raise Dl16Error(f"cannot write capture output {str(output_dir)!r}: {exc}") from exc
     return manifest

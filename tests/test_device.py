@@ -1,7 +1,7 @@
-from atkdl16_cli.device import AtkDevice
-from atkdl16_cli.protocol import Command, build_transport_frame
-from atkdl16_cli.pwm import build_pwm_start_payload, build_pwm_stop_payload
-from atkdl16_cli.usb import DeviceInfo, DryRunBackend
+from dl16_cli.device import Dl16Device
+from dl16_cli.protocol import Command, build_transport_frame
+from dl16_cli.pwm import build_pwm_start_payload, build_pwm_stop_payload
+from dl16_cli.usb import DeviceInfo, DryRunBackend
 
 
 class InitializationBackend(DryRunBackend):
@@ -29,7 +29,7 @@ def test_dry_run_backend_lists_configured_devices():
 
 def test_device_pwm_start_sends_expected_transport_frame():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.pwm_start(channel=0, frequency_hz=1_000, duty_percent=50)
     expected = build_transport_frame(Command.PWM, build_pwm_start_payload(0, 1_000, 50))
     assert frame == expected
@@ -38,7 +38,7 @@ def test_device_pwm_start_sends_expected_transport_frame():
 
 def test_device_pwm_stop_sends_expected_transport_frame():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.pwm_stop(channel=1)
     expected = build_transport_frame(Command.PWM, build_pwm_stop_payload(1))
     assert frame == expected
@@ -47,7 +47,7 @@ def test_device_pwm_stop_sends_expected_transport_frame():
 
 def test_device_stop_without_channel_sends_empty_stop_payload():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.stop()
     expected = build_transport_frame(Command.STOP, b"")
     assert frame == expected
@@ -56,7 +56,7 @@ def test_device_stop_without_channel_sends_empty_stop_payload():
 
 def test_device_stop_with_channel_sends_one_byte_payload():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.stop(channel=2)
     expected = build_transport_frame(Command.STOP, b"\x02")
     assert frame == expected
@@ -65,7 +65,7 @@ def test_device_stop_with_channel_sends_one_byte_payload():
 
 def test_get_device_data_frame_is_built_without_sending():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.get_device_data_frame()
     assert frame == build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert backend.sent_frames == []
@@ -73,7 +73,7 @@ def test_get_device_data_frame_is_built_without_sending():
 
 def test_get_device_data_sends_query_frame():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     response = device.get_device_data()
     expected = build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert response == b""
@@ -83,7 +83,7 @@ def test_get_device_data_sends_query_frame():
 def test_initialize_connection_recovers_waits_and_runs_mcu_fpga_handshake():
     backend = InitializationBackend()
     sleeps = []
-    response = AtkDevice(backend).initialize_connection(sleep_fn=sleeps.append)
+    response = Dl16Device(backend).initialize_connection(sleep_fn=sleeps.append)
     assert backend.recovered is True
     assert sleeps[0] == 0.4
     assert backend.written_chunks[0][:3] == b"\x0a\x81\x0b"
@@ -94,7 +94,7 @@ def test_initialize_connection_recovers_waits_and_runs_mcu_fpga_handshake():
 
 def test_raw_parameter_and_trigger_methods_send_expected_frames():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     payload = b"\x11\x22"
     cases = [
         (device.parameter_setting_raw, Command.PARAMETER_SETTING),
@@ -109,10 +109,10 @@ def test_raw_parameter_and_trigger_methods_send_expected_frames():
 
 
 def test_configure_sampling_sends_recovered_parameter_payload():
-    from atkdl16_cli.capture import SamplingParameters, build_parameter_setting_payload
+    from dl16_cli.capture import SamplingParameters, build_parameter_setting_payload
 
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     params = SamplingParameters(10, 100_000_000, 25, -1.2, 3, True, False, 1)
     frame = device.configure_sampling(params)
     expected = build_transport_frame(Command.PARAMETER_SETTING, build_parameter_setting_payload(params))
@@ -121,7 +121,7 @@ def test_configure_sampling_sends_recovered_parameter_payload():
 
 
 def test_high_level_trigger_methods_send_built_payloads():
-    from atkdl16_cli.trigger import (
+    from dl16_cli.trigger import (
         SerialTriggerConfig,
         StageCondition,
         TriggerState,
@@ -131,7 +131,7 @@ def test_high_level_trigger_methods_send_built_payloads():
     )
 
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     states = [TriggerState.RISING, TriggerState.HIGH]
     simple = device.configure_simple_trigger(states, collect_type=1)
     stages = [StageCondition(states, 0x1234, False)]

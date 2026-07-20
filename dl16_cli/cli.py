@@ -16,9 +16,9 @@ from .capture import (
     interpret_capture_packet,
 )
 from .acquisition import capture_to_disk
-from .device import AtkDevice
+from .device import Dl16Device
 from .decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
-from .errors import AtkDl16Error
+from .errors import Dl16Error
 from .export import export_capture
 from .measure import measure_pwm_capture
 from .filtering import filter_glitches
@@ -57,7 +57,7 @@ def _print_device_info(response: bytes, *, include_raw: bool = False) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="atkdl16")
+    parser = argparse.ArgumentParser(prog="dl16")
     parser.add_argument("--dry-run", action="store_true", help="print frames without accessing USB hardware")
     parser.add_argument("--vid-pid", default=None, help="select USB device as VID:PID hex, for example 1a86:ffcc")
     parser.add_argument("--timeout-ms", type=int, default=1000, help="USB timeout in milliseconds")
@@ -248,13 +248,13 @@ def _dry_backend() -> DryRunBackend:
 
 def create_backend(dry_run: bool, vid_pid: tuple[int, int] | None, timeout_ms: int) -> UsbBackend:
     if timeout_ms <= 0:
-        raise AtkDl16Error(f"timeout-ms must be positive, got {timeout_ms}")
+        raise Dl16Error(f"timeout-ms must be positive, got {timeout_ms}")
     if dry_run:
         return _dry_backend()
     return PyUsbBackend(vid_pid=vid_pid, timeout_ms=timeout_ms)
 
 
-def _send_raw_command(device: AtkDevice, raw_command: str, payload: bytes) -> tuple[str, bytes]:
+def _send_raw_command(device: Dl16Device, raw_command: str, payload: bytes) -> tuple[str, bytes]:
     if raw_command == "parameter-setting":
         return "PARAMETER_SETTING", device.parameter_setting_raw(payload)
     if raw_command == "simple-trigger":
@@ -271,7 +271,7 @@ def _parse_enabled(text: str | None) -> list[bool] | None:
         return None
     values = [item.strip() for item in text.split(",")]
     if any(item not in {"0", "1"} for item in values):
-        raise AtkDl16Error("enabled mask must contain only comma-separated 0/1 values")
+        raise Dl16Error("enabled mask must contain only comma-separated 0/1 values")
     return [item == "1" for item in values]
 
 
@@ -281,18 +281,18 @@ def _parse_capture_channels(single: int | None, multiple: str | None) -> list[in
     else:
         raw_values = [item.strip() for item in multiple.split(",")]
         if not raw_values or any(not item for item in raw_values):
-            raise AtkDl16Error("channels must be a non-empty comma-separated list")
+            raise Dl16Error("channels must be a non-empty comma-separated list")
         try:
             channels = [int(item, 10) for item in raw_values]
         except ValueError as exc:
-            raise AtkDl16Error("channels must contain decimal channel numbers") from exc
+            raise Dl16Error("channels must contain decimal channel numbers") from exc
     if not channels:
-        raise AtkDl16Error("at least one capture channel is required")
+        raise Dl16Error("at least one capture channel is required")
     if len(set(channels)) != len(channels):
-        raise AtkDl16Error("duplicate channel in capture channel list")
+        raise Dl16Error("duplicate channel in capture channel list")
     invalid = [channel for channel in channels if not 0 <= channel <= 15]
     if invalid:
-        raise AtkDl16Error(f"channel must be in range 0..15, got {invalid[0]}")
+        raise Dl16Error(f"channel must be in range 0..15, got {invalid[0]}")
     return sorted(channels)
 
 
@@ -301,18 +301,18 @@ def _parse_trigger_conditions(text: str, channels: Sequence[int]) -> dict[int, T
     for item in text.split(","):
         parts = item.split("=", 1)
         if len(parts) != 2 or not all(part.strip() for part in parts):
-            raise AtkDl16Error("trigger-states must use CH=STATE comma-separated syntax")
+            raise Dl16Error("trigger-states must use CH=STATE comma-separated syntax")
         try:
             channel = int(parts[0], 10)
         except ValueError as exc:
-            raise AtkDl16Error(f"invalid trigger channel: {parts[0]!r}") from exc
+            raise Dl16Error(f"invalid trigger channel: {parts[0]!r}") from exc
         if channel in result:
-            raise AtkDl16Error(f"duplicate trigger channel: {channel}")
+            raise Dl16Error(f"duplicate trigger channel: {channel}")
         if channel not in channels:
-            raise AtkDl16Error(f"trigger channel {channel} must be one of the captured channels")
+            raise Dl16Error(f"trigger channel {channel} must be one of the captured channels")
         result[channel] = parse_trigger_state(parts[1])
     if not result or all(state == TriggerState.NULL for state in result.values()):
-        raise AtkDl16Error("trigger-states requires at least one active condition")
+        raise Dl16Error("trigger-states requires at least one active condition")
     return result
 
 
@@ -320,15 +320,15 @@ def _load_json_object(path: str) -> dict:
     try:
         value = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        raise AtkDl16Error(f"cannot read trigger JSON {path!r}: {exc}") from exc
+        raise Dl16Error(f"cannot read trigger JSON {path!r}: {exc}") from exc
     if not isinstance(value, dict):
-        raise AtkDl16Error("trigger JSON root must be an object")
+        raise Dl16Error("trigger JSON root must be an object")
     return value
 
 
 def _states_from_json(values: object):
     if not isinstance(values, list) or not values:
-        raise AtkDl16Error("trigger state field must be a non-empty array")
+        raise Dl16Error("trigger state field must be a non-empty array")
     return parse_trigger_states(",".join(str(item) for item in values))
 
 
@@ -350,7 +350,7 @@ def _parse_capture_file(path: str) -> list[Dl16CapturePacket]:
     try:
         data = Path(path).read_bytes()
     except OSError as exc:
-        raise AtkDl16Error(f"cannot read capture file {path!r}: {exc}") from exc
+        raise Dl16Error(f"cannot read capture file {path!r}: {exc}") from exc
     return Dl16StreamParser().feed(data)
 
 
@@ -358,20 +358,20 @@ def _read_capture_packets(
     backend: UsbBackend, *, packet_count: int, output: str, read_size: int | None
 ) -> list[Dl16CapturePacket]:
     if packet_count <= 0:
-        raise AtkDl16Error(f"packets must be positive, got {packet_count}")
+        raise Dl16Error(f"packets must be positive, got {packet_count}")
     if read_size is not None and read_size <= 0:
-        raise AtkDl16Error(f"read-size must be positive, got {read_size}")
+        raise Dl16Error(f"read-size must be positive, got {read_size}")
     parser = Dl16StreamParser()
     packets: list[Dl16CapturePacket] = []
     try:
         stream = Path(output).open("wb")
     except OSError as exc:
-        raise AtkDl16Error(f"cannot open capture output {output!r}: {exc}") from exc
+        raise Dl16Error(f"cannot open capture output {output!r}: {exc}") from exc
     with stream:
         while len(packets) < packet_count:
             chunk = backend.read_chunk(size=read_size)
             if not chunk:
-                raise AtkDl16Error(
+                raise Dl16Error(
                     f"USB receive stream ended before {packet_count} packet(s); got {len(packets)}"
                 )
             decoded = parser.feed(chunk)
@@ -392,7 +392,7 @@ def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> d
         channel_data.setdefault(block.channel, bytearray()).extend(block.packed_samples)
         metadata.setdefault(block.channel, []).append(block.metadata1)
     if not channel_data:
-        raise AtkDl16Error("capture contains no type-1 channel sample packets")
+        raise Dl16Error("capture contains no type-1 channel sample packets")
     destination = Path(output_dir)
     try:
         destination.mkdir(parents=True, exist_ok=True)
@@ -410,7 +410,7 @@ def _decode_capture_file(input_path: str, output_dir: str, *, is_rle: bool) -> d
         manifest = {"bit_order": "lsb-first", "rle": is_rle, "channels": channels}
         (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     except OSError as exc:
-        raise AtkDl16Error(f"cannot write decoded capture to {output_dir!r}: {exc}") from exc
+        raise Dl16Error(f"cannot write decoded capture to {output_dir!r}: {exc}") from exc
     return manifest
 
 
@@ -421,12 +421,12 @@ def _emit_protocol_decode(result: dict, output: str | None) -> None:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
         except OSError as exc:
-            raise AtkDl16Error(f"cannot write protocol decode {output!r}: {exc}") from exc
+            raise Dl16Error(f"cannot write protocol decode {output!r}: {exc}") from exc
     print(json.dumps(result, sort_keys=True))
 
 
 def _run_multi_channel_capture(
-    device: AtkDevice,
+    device: Dl16Device,
     backend: UsbBackend,
     params: SamplingParameters,
     *,
@@ -451,7 +451,7 @@ def _run_multi_channel_capture(
 
 
 def _run_single_channel_capture(
-    device: AtkDevice,
+    device: Dl16Device,
     backend: UsbBackend,
     params: SamplingParameters,
     *,
@@ -490,7 +490,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "capture" and args.capture_command == "run":
             run_channels = _parse_capture_channels(args.channel, args.channels)
             if args.rle and not args.buffer:
-                raise AtkDl16Error("capture run --rle requires --buffer")
+                raise Dl16Error("capture run --rle requires --buffer")
             run_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
             validate_capture_combination(args.set_hz, len(run_channels), is_buffer=args.buffer)
             trigger_map = {
@@ -504,7 +504,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             run_trigger_state = trigger_map[args.trigger]
             if args.trigger_states is not None:
                 if args.trigger != "none" or args.trigger_channel is not None:
-                    raise AtkDl16Error("--trigger-states cannot be combined with --trigger or --trigger-channel")
+                    raise Dl16Error("--trigger-states cannot be combined with --trigger or --trigger-channel")
                 run_trigger_states = _parse_trigger_conditions(args.trigger_states, run_channels)
             run_trigger_channel = args.trigger_channel
             if run_trigger_states is not None:
@@ -512,16 +512,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif run_trigger_state != TriggerState.NULL:
                 run_trigger_channel = run_trigger_channel if run_trigger_channel is not None else run_channels[0]
                 if run_trigger_channel not in run_channels:
-                    raise AtkDl16Error("trigger channel must be one of the captured channels")
+                    raise Dl16Error("trigger channel must be one of the captured channels")
             elif run_trigger_channel is not None:
-                raise AtkDl16Error("--trigger-channel requires --trigger rising or falling")
+                raise Dl16Error("--trigger-channel requires --trigger rising or falling")
         if args.command == "capture" and args.capture_command == "stream":
             stream_channels = _parse_capture_channels(args.channel, args.channels)
             stream_sample_index = resolve_sample_index(args.set_hz, args.sample_index)
             validate_capture_combination(args.set_hz, len(stream_channels), is_buffer=False)
             if args.duration is not None:
                 if not math.isfinite(args.duration) or args.duration <= 0:
-                    raise AtkDl16Error("stream duration must be a positive finite number")
+                    raise Dl16Error("stream duration must be a positive finite number")
                 stream_set_time = args.duration * 1000.0
             else:
                 stream_set_time = ((1 << 40) - 1) // (args.set_hz // 1_000)
@@ -553,7 +553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     output = show_sigrok_decoder(args.show)
                 else:
                     if args.input_dir is None or args.decoder is None:
-                        raise AtkDl16Error("capture sigrok requires --input-dir and --decoder")
+                        raise Dl16Error("capture sigrok requires --input-dir and --decoder")
                     output = decode_with_sigrok(
                         args.input_dir, decoder=args.decoder, channels=args.channel,
                         options=args.option, annotations=args.annotations,
@@ -564,7 +564,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         destination.write_text(output)
                     except OSError as exc:
-                        raise AtkDl16Error(f"cannot write sigrok output {args.output!r}: {exc}") from exc
+                        raise Dl16Error(f"cannot write sigrok output {args.output!r}: {exc}") from exc
                 else:
                     print(output, end="" if output.endswith("\n") else "\n")
                 return 0
@@ -593,7 +593,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         destination.parent.mkdir(parents=True, exist_ok=True)
                         destination.write_text(encoded)
                     except OSError as exc:
-                        raise AtkDl16Error(f"cannot write search output {args.output!r}: {exc}") from exc
+                        raise Dl16Error(f"cannot write search output {args.output!r}: {exc}") from exc
                 else:
                     print(encoded, end="")
                 return 0
@@ -621,16 +621,16 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _emit_protocol_decode(result, args.output)
                 return 0
             if args.capture_command == "run" and args.dry_run:
-                raise AtkDl16Error("capture run requires connected hardware; use capture configure for dry-run")
+                raise Dl16Error("capture run requires connected hardware; use capture configure for dry-run")
             if args.capture_command == "stream" and args.dry_run:
-                raise AtkDl16Error("capture stream requires connected hardware")
+                raise Dl16Error("capture stream requires connected hardware")
 
         if args.command == "session" and args.dry_run:
-            raise AtkDl16Error("session requires connected hardware")
+            raise Dl16Error("session requires connected hardware")
 
         vid_pid = parse_usb_id(args.vid_pid) if args.vid_pid else None
         backend = create_backend(args.dry_run, vid_pid, args.timeout_ms)
-        device = AtkDevice(backend)
+        device = Dl16Device(backend)
 
         if args.command == "session":
             if args.commands == "-":
@@ -639,7 +639,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 with Path(args.commands).open(encoding="utf-8") as source:
                     return run_json_session(Dl16Session(backend, device=device), source, sys.stdout)
             except OSError as exc:
-                raise AtkDl16Error(f"cannot read session commands {args.commands!r}: {exc}") from exc
+                raise Dl16Error(f"cannot read session commands {args.commands!r}: {exc}") from exc
 
         if args.command == "list":
             for info in backend.list_devices():
@@ -701,11 +701,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             data = _load_json_object(args.file)
             raw_stages = data.get("stages")
             if not isinstance(raw_stages, list) or not raw_stages:
-                raise AtkDl16Error("stage trigger JSON requires a non-empty stages array")
+                raise Dl16Error("stage trigger JSON requires a non-empty stages array")
             stages = []
             for item in raw_stages:
                 if not isinstance(item, dict):
-                    raise AtkDl16Error("each stage must be an object")
+                    raise Dl16Error("each stage must be an object")
                 stages.append(StageCondition(
                     _states_from_json(item.get("states")),
                     int(item.get("counter", 0)),
@@ -836,7 +836,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         parser.error(f"unsupported command combination: {args}")
         return 2
-    except AtkDl16Error as exc:
+    except Dl16Error as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     except KeyboardInterrupt:

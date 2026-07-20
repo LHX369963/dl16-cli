@@ -1,5 +1,5 @@
-from atkdl16_cli import __version__
-from atkdl16_cli.errors import AtkDl16Error, ProtocolError, UsbBackendError
+from dl16_cli import __version__
+from dl16_cli.errors import Dl16Error, ProtocolError, UsbBackendError
 
 
 def test_package_exports_version_string():
@@ -8,5 +8,5 @@ def test_package_exports_version_string():
 
 
 def test_error_hierarchy():
-    assert issubclass(ProtocolError, AtkDl16Error)
-    assert issubclass(UsbBackendError, AtkDl16Error)
+    assert issubclass(ProtocolError, Dl16Error)
+    assert issubclass(UsbBackendError, Dl16Error)

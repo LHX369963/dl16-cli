@@ -1,10 +1,10 @@
-class AtkDl16Error(Exception):
-    """Base exception for atkdl16-cli."""
+class Dl16Error(Exception):
+    """Base exception for dl16-cli."""
 
 
-class ProtocolError(AtkDl16Error):
+class ProtocolError(Dl16Error):
     """Raised when a command payload or protocol frame is invalid."""
 
 
-class UsbBackendError(AtkDl16Error):
+class UsbBackendError(Dl16Error):
     """Raised when the selected USB backend cannot complete an operation."""

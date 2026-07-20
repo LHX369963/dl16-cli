@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import AtkDl16Error
-from atkdl16_cli.sigrok import decode_with_sigrok
+from dl16_cli.errors import Dl16Error
+from dl16_cli.sigrok import decode_with_sigrok
 
 
 def test_sigrok_bridge_exports_vcd_and_builds_safe_decoder_spec(monkeypatch, tmp_path):
@@ -11,9 +11,9 @@ def test_sigrok_bridge_exports_vcd_and_builds_safe_decoder_spec(monkeypatch, tmp
         calls.append((capture_dir, format))
         output.write_text("$timescale 1ns $end\n")
 
-    monkeypatch.setattr("atkdl16_cli.sigrok.export_capture", fake_export)
+    monkeypatch.setattr("dl16_cli.sigrok.export_capture", fake_export)
     monkeypatch.setattr(
-        "atkdl16_cli.sigrok._run",
+        "dl16_cli.sigrok._run",
         lambda arguments: calls.append(arguments) or "decoded\n",
     )
     assert decode_with_sigrok(
@@ -26,12 +26,12 @@ def test_sigrok_bridge_exports_vcd_and_builds_safe_decoder_spec(monkeypatch, tmp
 
 @pytest.mark.parametrize("mapping", ["rx", "rx=", "rx=16", "rx=-1", "rx=x"])
 def test_sigrok_bridge_rejects_invalid_channel_mapping(mapping, tmp_path):
-    with pytest.raises(AtkDl16Error):
+    with pytest.raises(Dl16Error):
         decode_with_sigrok(tmp_path, decoder="uart", channels=[mapping])
 
 
 def test_cli_sigrok_show_is_offline(monkeypatch, capsys):
-    import atkdl16_cli.cli as cli
+    import dl16_cli.cli as cli
 
     monkeypatch.setattr(cli, "show_sigrok_decoder", lambda decoder: f"ID: {decoder}\n")
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: pytest.fail("USB opened"))

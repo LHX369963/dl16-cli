@@ -1,4 +1,4 @@
-# ATK DL16 Trigger Builder Implementation Plan
+# DL16 Trigger Builder Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -58,7 +58,7 @@ packed stop conditions
 
 ### Task 1: State packing and simple trigger
 
-Files: `atkdl16_cli/trigger.py`, `tests/test_trigger.py`
+Files: `dl16_cli/trigger.py`, `tests/test_trigger.py`
 
 - [ ] Write failing tests for all nibble codes, disabled masks, channel offset padding, and simple trailer bytes.
 - [ ] Implement enum/parser/packer/simple builder.
@@ -66,7 +66,7 @@ Files: `atkdl16_cli/trigger.py`, `tests/test_trigger.py`
 
 ### Task 2: Stage and serial builders
 
-Files: `atkdl16_cli/trigger.py`, `tests/test_trigger.py`
+Files: `dl16_cli/trigger.py`, `tests/test_trigger.py`
 
 - [ ] Write failing tests for exact stage and serial payload layouts and validation.
 - [ ] Implement dataclasses and builders.
@@ -74,7 +74,7 @@ Files: `atkdl16_cli/trigger.py`, `tests/test_trigger.py`
 
 ### Task 3: CLI integration
 
-Files: `atkdl16_cli/cli.py`, `tests/test_cli.py`
+Files: `dl16_cli/cli.py`, `tests/test_cli.py`
 
 - [ ] Add failing tests for `trigger simple`, `trigger stage --file`, and `trigger serial --file` dry-run paths.
 - [ ] Implement JSON loading and device command dispatch.

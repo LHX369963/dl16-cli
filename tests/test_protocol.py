@@ -1,7 +1,7 @@
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.protocol import (
+from dl16_cli.errors import ProtocolError
+from dl16_cli.protocol import (
     Command,
     SUPPORTED_USB_IDS,
     UsbId,

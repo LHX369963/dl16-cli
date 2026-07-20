@@ -1,4 +1,4 @@
-# ATK DL16 Hardware USB Backend Implementation Plan
+# DL16 Hardware USB Backend Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -22,9 +22,9 @@
 ## File Structure
 
 - Modify `pyproject.toml`: add optional `usb = ["pyusb>=1.2"]` extra.
-- Modify `atkdl16_cli/usb.py`: add `PyUsbBackend`, endpoint helpers, optional import handling, and open/close/send behavior.
-- Modify `atkdl16_cli/device.py`: add `get_device_data()` send path that returns response bytes.
-- Modify `atkdl16_cli/cli.py`: enable non-dry-run `list`, `info`, `stop`, `pwm start`, `pwm stop`; add `--vid-pid` and `--timeout-ms` global options.
+- Modify `dl16_cli/usb.py`: add `PyUsbBackend`, endpoint helpers, optional import handling, and open/close/send behavior.
+- Modify `dl16_cli/device.py`: add `get_device_data()` send path that returns response bytes.
+- Modify `dl16_cli/cli.py`: enable non-dry-run `list`, `info`, `stop`, `pwm start`, `pwm stop`; add `--vid-pid` and `--timeout-ms` global options.
 - Create `tests/test_usb_backend.py`: fake pyusb objects and backend tests.
 - Modify `tests/test_cli.py`: non-dry-run CLI tests through monkeypatched backend factory.
 - Modify `docs/protocol/protocol.md`: document hardware backend behavior and limitations.
@@ -35,7 +35,7 @@
 
 **Files:**
 - Modify: `pyproject.toml`
-- Modify: `atkdl16_cli/usb.py`
+- Modify: `dl16_cli/usb.py`
 - Test: `tests/test_usb_backend.py`
 
 **Interfaces:**
@@ -48,7 +48,7 @@ Steps:
 - [ ] Write tests for parsing `1a86:ffcc`, rejecting malformed IDs, and checking supported IDs.
 - [ ] Run `python3 -m pytest tests/test_usb_backend.py -v`; expect missing functions/import failure.
 - [ ] Add optional dependency group `usb = ["pyusb>=1.2"]` to `pyproject.toml`.
-- [ ] Implement `parse_usb_id`, `is_supported_usb_id`, and `PyUsbUnavailableError` in `atkdl16_cli/usb.py`.
+- [ ] Implement `parse_usb_id`, `is_supported_usb_id`, and `PyUsbUnavailableError` in `dl16_cli/usb.py`.
 - [ ] Run `python3 -m pytest tests/test_usb_backend.py -v`; expect pass.
 - [ ] Run `python3 -m pytest -v`; expect pass.
 - [ ] Commit with `feat: add USB backend parsing helpers`.
@@ -56,7 +56,7 @@ Steps:
 ### Task 2: Descriptor-driven PyUsbBackend discovery and endpoint selection
 
 **Files:**
-- Modify: `atkdl16_cli/usb.py`
+- Modify: `dl16_cli/usb.py`
 - Test: `tests/test_usb_backend.py`
 
 **Interfaces:**
@@ -79,14 +79,14 @@ Steps:
 ### Task 3: Real backend send/read boundary and device facade info command
 
 **Files:**
-- Modify: `atkdl16_cli/usb.py`
-- Modify: `atkdl16_cli/device.py`
+- Modify: `dl16_cli/usb.py`
+- Modify: `dl16_cli/device.py`
 - Test: `tests/test_usb_backend.py`
 - Test: `tests/test_device.py`
 
 **Interfaces:**
 - Produces: `PyUsbBackend.send_frame(frame: bytes) -> bytes`
-- Produces: `AtkDevice.get_device_data() -> bytes`
+- Produces: `Dl16Device.get_device_data() -> bytes`
 
 Steps:
 
@@ -94,14 +94,14 @@ Steps:
 - [ ] Write device test proving `get_device_data()` sends the `GET_DEVICE_DATA` frame through backend.
 - [ ] Run targeted tests; expect missing behavior failures.
 - [ ] Implement `send_frame()` using endpoint `.write(frame, timeout=timeout_ms)` and optional `.read(max_packet_size, timeout=timeout_ms)`.
-- [ ] Implement `AtkDevice.get_device_data()`.
+- [ ] Implement `Dl16Device.get_device_data()`.
 - [ ] Run targeted and full tests; expect pass.
 - [ ] Commit with `feat: send frames through pyusb backend`.
 
 ### Task 4: CLI non-dry-run backend selection
 
 **Files:**
-- Modify: `atkdl16_cli/cli.py`
+- Modify: `dl16_cli/cli.py`
 - Test: `tests/test_cli.py`
 
 **Interfaces:**
@@ -128,7 +128,7 @@ Steps:
 - [ ] Document that only `info`, `stop`, and `pwm` are wired to hardware in this stage.
 - [ ] Document that capture and triggers remain unavailable pending protocol recovery.
 - [ ] Run `python3 -m pytest -v`; expect pass.
-- [ ] Run `python3 -m atkdl16_cli.cli --dry-run list`; expect the three supported IDs.
-- [ ] Run `python3 -m atkdl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50`; expect a `PWM_START frame` line.
+- [ ] Run `python3 -m dl16_cli.cli --dry-run list`; expect the three supported IDs.
+- [ ] Run `python3 -m dl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50`; expect a `PWM_START frame` line.
 - [ ] Run `git status --short`; expect no tracked modifications after commit.
 - [ ] Commit with `docs: document pyusb backend stage`.

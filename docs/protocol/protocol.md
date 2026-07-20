@@ -1,4 +1,4 @@
-# ATK DL16 Protocol Reference
+# DL16 Protocol Reference
 
 Status: the DL16 acquisition path is implemented and hardware-verified; fields
 that remain unknown are explicitly labelled rather than guessed.
@@ -134,21 +134,21 @@ python3 -m pip install -e '.[usb]'
 
 The hardware backend exposes the tested command builders plus independent bulk-IN capture reads:
 
-- `atkdl16 list`
-- `atkdl16 info`
-- `atkdl16 stop [--channel N]`
-- `atkdl16 pwm start --channel N --freq HZ --duty PERCENT`
-- `atkdl16 pwm stop --channel N`
-- `atkdl16 capture configure ...`
-- `atkdl16 trigger simple ...`
-- `atkdl16 trigger stage --file ...`
-- `atkdl16 trigger serial --file ...`
-- `atkdl16 capture read --packets N --output wire.bin`
-- `atkdl16 capture run ... --output-dir capture`
-- `atkdl16 capture stream ... --output-dir capture`
-- `atkdl16 capture export ...`
-- `atkdl16 capture uart|i2c|spi ...`
-- `atkdl16 session [--commands commands.jsonl]`
+- `dl16 list`
+- `dl16 info`
+- `dl16 stop [--channel N]`
+- `dl16 pwm start --channel N --freq HZ --duty PERCENT`
+- `dl16 pwm stop --channel N`
+- `dl16 capture configure ...`
+- `dl16 trigger simple ...`
+- `dl16 trigger stage --file ...`
+- `dl16 trigger serial --file ...`
+- `dl16 capture read --packets N --output wire.bin`
+- `dl16 capture run ... --output-dir capture`
+- `dl16 capture stream ... --output-dir capture`
+- `dl16 capture export ...`
+- `dl16 capture uart|i2c|spi ...`
+- `dl16 session [--commands commands.jsonl]`
 
 The backend opens supported devices by descriptor, claims interface 0, detaches the kernel driver when the platform supports it, selects endpoints from descriptors, writes the command frame to the OUT endpoint, and reads one packet from the IN endpoint when present.
 
@@ -163,7 +163,7 @@ decode in one process, so no command boundary resets the configured capture. A
 single-channel 1 MHz/500 ms acquisition matching the confirmed CH7 trace is:
 
 ```bash
-atkdl16 --timeout-ms 2000 capture run \
+dl16 --timeout-ms 2000 capture run \
   --channel 7 \
   --set-time 500 \
   --set-hz 1000000 \
@@ -183,10 +183,10 @@ independently and removes each channel's completion suffix.
 The following commands expose recovered command IDs with caller-supplied payload bytes. They are intended for reverse-engineering experiments and do not imply that the payload schema is fully decoded:
 
 ```bash
-atkdl16 --dry-run raw parameter-setting --payload-hex "11 22"
-atkdl16 --dry-run raw simple-trigger --payload-hex "aa"
-atkdl16 --dry-run raw stage-trigger --payload-hex "aa"
-atkdl16 --dry-run raw serial-trigger --payload-hex "aa"
+dl16 --dry-run raw parameter-setting --payload-hex "11 22"
+dl16 --dry-run raw simple-trigger --payload-hex "aa"
+dl16 --dry-run raw stage-trigger --payload-hex "aa"
+dl16 --dry-run raw serial-trigger --payload-hex "aa"
 ```
 
 Mapping:
@@ -205,7 +205,7 @@ Use non-dry-run raw commands only when connected to sacrificial or recoverable h
 The high-level CLI can now construct the recovered 13-byte `ParameterSetting` payload:
 
 ```bash
-atkdl16 --dry-run capture configure \
+dl16 --dry-run capture configure \
   --set-time 10 \
   --set-hz 100000000 \
   --trigger-position 25 \
@@ -246,7 +246,7 @@ channels through 100 MHz. Buffer mode permits up to 16 channels through
 Simple trigger accepts channel states in ascending channel order; the first channel occupies the high nibble:
 
 ```bash
-atkdl16 --dry-run trigger simple \
+dl16 --dry-run trigger simple \
   --states rising,high,null,low \
   --enabled 1,1,1,1 \
   --collect-type 1
@@ -259,7 +259,7 @@ channel defaults to the first captured channel and must be included in the
 capture set:
 
 ```bash
-atkdl16 capture run --buffer --channels 6,7 \
+dl16 capture run --buffer --channels 6,7 \
   --sample-rate 100000000 --set-time 1 \
   --trigger rising --trigger-channel 6 --trigger-position 50 \
   --threshold 1.2 --output-dir triggered
@@ -270,8 +270,8 @@ The manifest records the edge, channel, and requested trigger position.
 Stage and serial trigger commands consume JSON:
 
 ```bash
-atkdl16 --dry-run trigger stage --file examples/stage-trigger.json
-atkdl16 --dry-run trigger serial --file examples/serial-trigger.json
+dl16 --dry-run trigger stage --file examples/stage-trigger.json
+dl16 --dry-run trigger serial --file examples/serial-trigger.json
 ```
 
 `stage-trigger.json` schema:
@@ -345,8 +345,8 @@ format-1 decimal interpretation to fields the original parser did not assign.
 Raw capture and inspection:
 
 ```bash
-atkdl16 capture read --packets 100 --output wire.bin
-atkdl16 capture parse --input wire.bin
+dl16 capture read --packets 100 --output wire.bin
+dl16 capture parse --input wire.bin
 ```
 
 `capture read` saves complete concatenated wire packets without altering them.
@@ -354,7 +354,7 @@ atkdl16 capture parse --input wire.bin
 One-shot acquisition accepts either one channel or a comma-separated channel set:
 
 ```bash
-atkdl16 capture run --buffer --channels 6,7 \
+dl16 capture run --buffer --channels 6,7 \
   --set-time 0.08 --set-hz 250000000 --sample-index 12 \
   --trigger-position 0 --threshold 1.2 --output-dir capture-buffer
 ```
@@ -372,7 +372,7 @@ static as expected.
 Buffer hardware RLE can be enabled for one or more channels:
 
 ```bash
-atkdl16 capture run --buffer --rle --channels 6,7 \
+dl16 capture run --buffer --rle --channels 6,7 \
   --set-time 2500 --set-hz 250000000 --sample-index 12 \
   --trigger-position 0 --threshold 1.2 --output-dir capture-rle
 ```
@@ -424,8 +424,8 @@ rows incrementally. A 20,000-sample, 16-channel acceptance capture exported in
 0.10 s (CSV) and 0.07 s (edges/VCD), with about 15 MB maximum RSS on the test
 host.
 
-`atkdl16 session` is a JSON-lines command loop that performs link recovery once
-and then accepts PWM and Stream operations over the same `AtkDevice`. This is
+`dl16 session` is a JSON-lines command loop that performs link recovery once
+and then accepts PWM and Stream operations over the same `Dl16Device`. This is
 required when a loopback test must preserve both PWM generators across capture
 configuration. A live 100 MHz session measured PWM0 on CH7 at 1 MHz/75% and
 PWM1 on CH6 at 2 MHz/24% (finite sample quantization around the requested 25%).
@@ -438,8 +438,8 @@ reports address/direction/data/ACK; SPI supports modes 0..3, MSB/LSB, arbitrary
 Decode a saved stream into one packed file per channel:
 
 ```bash
-atkdl16 capture decode --input wire.bin --output-dir decoded
-atkdl16 capture decode --input wire-rle.bin --output-dir decoded-rle --rle
+dl16 capture decode --input wire.bin --output-dir decoded
+dl16 capture decode --input wire-rle.bin --output-dir decoded-rle --rle
 ```
 
 The output directory contains `channel-NN.bin` files and `manifest.json`. Packed files retain the LSB-first eight-samples-per-byte representation.

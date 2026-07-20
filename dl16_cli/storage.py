@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .errors import AtkDl16Error
+from .errors import Dl16Error
 
 
 def prepare_capture_directory(path: str | Path, *, overwrite: bool = False) -> Path:
@@ -16,14 +16,14 @@ def prepare_capture_directory(path: str | Path, *, overwrite: bool = False) -> P
         existing = [item for item in artifacts if item.exists()]
         if existing and not overwrite:
             names = ", ".join(sorted(item.name for item in existing))
-            raise AtkDl16Error(
+            raise Dl16Error(
                 f"capture output {str(destination)!r} already contains {names}; "
                 "choose another directory or use --force"
             )
         for item in existing:
             item.unlink()
-    except AtkDl16Error:
+    except Dl16Error:
         raise
     except OSError as exc:
-        raise AtkDl16Error(f"cannot prepare capture output {str(destination)!r}: {exc}") from exc
+        raise Dl16Error(f"cannot prepare capture output {str(destination)!r}: {exc}") from exc
     return destination

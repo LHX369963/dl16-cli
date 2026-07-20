@@ -135,9 +135,9 @@ The function also reads per-channel JSON objects and the key string with length 
 
 The first implementation plan turns the low-risk portions of this evidence into tested code:
 
-- `atkdl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
-- `atkdl16_cli.pwm` for PWM start/stop payloads.
-- `atkdl16_cli.device` and `atkdl16_cli.cli` for dry-run command frame generation.
+- `dl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
+- `dl16_cli.pwm` for PWM start/stop payloads.
+- `dl16_cli.device` and `dl16_cli.cli` for dry-run command frame generation.
 
 ## Capture and trigger call-site evidence
 

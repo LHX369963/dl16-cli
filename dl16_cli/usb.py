@@ -15,7 +15,7 @@ def _usb_error_message(action: str, exc: Exception) -> str:
     errno = getattr(exc, "errno", None)
     if errno in {1, 13} or "access" in text.lower() or "permission" in text.lower():
         return (
-            f"USB {action} failed: permission denied. Install udev/99-atk-dl16.rules, "
+            f"USB {action} failed: permission denied. Install udev/99-dl16.rules, "
             f"reload udev rules, and reconnect the DL16 ({text})"
         )
     return f"USB {action} failed: {text}"
@@ -203,7 +203,7 @@ class PyUsbBackend:
             if self.device is None:
                 self.device = self._find_device()
             if self.device is None:
-                raise UsbBackendError("no supported ATK DL16 device found")
+                raise UsbBackendError("no supported DL16 device found")
             self._detach_kernel_driver(0)
             self.usb_util.claim_interface(self.device, 0)
             self._claimed = True
@@ -235,7 +235,7 @@ class PyUsbBackend:
         if self.device is None:
             self.device = self._find_device()
         if self.device is None:
-            raise UsbBackendError("no supported ATK DL16 device found")
+            raise UsbBackendError("no supported DL16 device found")
         if (int(self.device.idVendor), int(self.device.idProduct)) != (0x1A86, 0xFFCC):
             self.open()
             return

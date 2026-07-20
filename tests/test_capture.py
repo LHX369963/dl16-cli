@@ -1,6 +1,6 @@
 import pytest
 
-from atkdl16_cli.capture import (
+from dl16_cli.capture import (
     Dl16StreamParser,
     SamplingParameters,
     decode_channel_packet,
@@ -9,7 +9,7 @@ from atkdl16_cli.capture import (
     interpret_capture_packet,
     build_parameter_setting_payload,
 )
-from atkdl16_cli.errors import ProtocolError
+from dl16_cli.errors import ProtocolError
 
 
 def test_parameter_payload_layout_matches_recovered_binary_formula():

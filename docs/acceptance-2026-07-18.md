@@ -1,6 +1,6 @@
 # DL16 CLI acceptance - 2026-07-18
 
-Target: ATK DL16 (`1a86:ffcc`), PWM0 looped to CH7 and PWM1 looped to CH15.
+Target: DL16 (`1a86:ffcc`), PWM0 looped to CH7 and PWM1 looped to CH15.
 
 ## Results
 

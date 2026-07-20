@@ -1,8 +1,8 @@
-# ATK DL16 Protocol Core and PWM Implementation Plan
+# DL16 Protocol Core and PWM Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first tested CLI/library foundation for ATK DL16 reverse engineering: command constants, frame encoding, CRC hooks, USB discovery data structures, dry-run command output, and PWM payload generation.
+**Goal:** Build the first tested CLI/library foundation for DL16 reverse engineering: command constants, frame encoding, CRC hooks, USB discovery data structures, dry-run command output, and PWM payload generation.
 
 **Architecture:** Implement a small Python package with pure packet builders first, then a CLI that can run in `--dry-run` mode without hardware. Hardware USB operations are represented by a narrow backend interface so later capture and trigger plans can add real libusb behavior without changing the packet builders.
 
@@ -23,13 +23,13 @@
 ## File Structure
 
 - Create `pyproject.toml`: package metadata, console script, pytest configuration.
-- Create `atkdl16_cli/__init__.py`: package version export.
-- Create `atkdl16_cli/errors.py`: typed exceptions.
-- Create `atkdl16_cli/protocol.py`: command IDs, USB IDs, CRC32 function, inner/outer frame builders.
-- Create `atkdl16_cli/pwm.py`: PWM start/stop payload builders.
-- Create `atkdl16_cli/usb.py`: backend interface, dry-run backend, device ID parsing.
-- Create `atkdl16_cli/device.py`: high-level facade for packet creation and backend send boundary.
-- Create `atkdl16_cli/cli.py`: argparse CLI with `list`, `info`, `stop`, and `pwm` dry-run behavior.
+- Create `dl16_cli/__init__.py`: package version export.
+- Create `dl16_cli/errors.py`: typed exceptions.
+- Create `dl16_cli/protocol.py`: command IDs, USB IDs, CRC32 function, inner/outer frame builders.
+- Create `dl16_cli/pwm.py`: PWM start/stop payload builders.
+- Create `dl16_cli/usb.py`: backend interface, dry-run backend, device ID parsing.
+- Create `dl16_cli/device.py`: high-level facade for packet creation and backend send boundary.
+- Create `dl16_cli/cli.py`: argparse CLI with `list`, `info`, `stop`, and `pwm` dry-run behavior.
 - Create `tests/test_protocol.py`: protocol unit tests.
 - Create `tests/test_pwm.py`: PWM unit tests.
 - Create `tests/test_cli.py`: CLI dry-run tests.
@@ -41,13 +41,13 @@
 
 **Files:**
 - Create: `pyproject.toml`
-- Create: `atkdl16_cli/__init__.py`
-- Create: `atkdl16_cli/errors.py`
+- Create: `dl16_cli/__init__.py`
+- Create: `dl16_cli/errors.py`
 - Test: `tests/test_imports.py`
 
 **Interfaces:**
-- Produces: `atkdl16_cli.__version__: str`
-- Produces: `AtkDl16Error`, `ProtocolError`, `UsbBackendError` exception classes
+- Produces: `dl16_cli.__version__: str`
+- Produces: `Dl16Error`, `ProtocolError`, `UsbBackendError` exception classes
 - Consumes: none
 
 - [ ] **Step 1: Write the failing import test**
@@ -55,8 +55,8 @@
 Create `tests/test_imports.py`:
 
 ```python
-from atkdl16_cli import __version__
-from atkdl16_cli.errors import AtkDl16Error, ProtocolError, UsbBackendError
+from dl16_cli import __version__
+from dl16_cli.errors import Dl16Error, ProtocolError, UsbBackendError
 
 
 def test_package_exports_version_string():
@@ -65,8 +65,8 @@ def test_package_exports_version_string():
 
 
 def test_error_hierarchy():
-    assert issubclass(ProtocolError, AtkDl16Error)
-    assert issubclass(UsbBackendError, AtkDl16Error)
+    assert issubclass(ProtocolError, Dl16Error)
+    assert issubclass(UsbBackendError, Dl16Error)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -77,7 +77,7 @@ Run:
 python3 -m pytest tests/test_imports.py -v
 ```
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'atkdl16_cli'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'dl16_cli'`.
 
 - [ ] **Step 3: Create package metadata**
 
@@ -89,9 +89,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "atkdl16-cli"
+name = "dl16-cli"
 version = "0.1.0"
-description = "Command-line reverse-engineered control utility for ATK DL16 logic analyzer"
+description = "Command-line reverse-engineered control utility for DL16 logic analyzer"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -99,7 +99,7 @@ dependencies = []
 test = ["pytest>=8"]
 
 [project.scripts]
-atkdl16 = "atkdl16_cli.cli:main"
+dl16 = "dl16_cli.cli:main"
 
 [tool.pytest.ini_options]
 addopts = "-q"
@@ -108,26 +108,26 @@ testpaths = ["tests"]
 
 - [ ] **Step 4: Create package files**
 
-Create `atkdl16_cli/__init__.py`:
+Create `dl16_cli/__init__.py`:
 
 ```python
-"""ATK DL16 command-line reverse-engineering package."""
+"""DL16 command-line reverse-engineering package."""
 
 __version__ = "0.1.0"
 ```
 
-Create `atkdl16_cli/errors.py`:
+Create `dl16_cli/errors.py`:
 
 ```python
-class AtkDl16Error(Exception):
-    """Base exception for atkdl16-cli."""
+class Dl16Error(Exception):
+    """Base exception for dl16-cli."""
 
 
-class ProtocolError(AtkDl16Error):
+class ProtocolError(Dl16Error):
     """Raised when a command payload or protocol frame is invalid."""
 
 
-class UsbBackendError(AtkDl16Error):
+class UsbBackendError(Dl16Error):
     """Raised when the selected USB backend cannot complete an operation."""
 ```
 
@@ -144,8 +144,8 @@ Expected: PASS, 2 tests passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pyproject.toml atkdl16_cli/__init__.py atkdl16_cli/errors.py tests/test_imports.py
-git commit -m "feat: scaffold atkdl16 cli package"
+git add pyproject.toml dl16_cli/__init__.py dl16_cli/errors.py tests/test_imports.py
+git commit -m "feat: scaffold dl16 cli package"
 ```
 
 ---
@@ -153,11 +153,11 @@ git commit -m "feat: scaffold atkdl16 cli package"
 ### Task 2: Protocol constants, CRC, and frame builders
 
 **Files:**
-- Create: `atkdl16_cli/protocol.py`
+- Create: `dl16_cli/protocol.py`
 - Test: `tests/test_protocol.py`
 
 **Interfaces:**
-- Consumes: `ProtocolError` from `atkdl16_cli.errors`
+- Consumes: `ProtocolError` from `dl16_cli.errors`
 - Produces: `SUPPORTED_USB_IDS: tuple[UsbId, ...]`
 - Produces: `Command` enum with values `GET_DEVICE_DATA=0x10`, `PARAMETER_SETTING=0x11`, `SIMPLE_TRIGGER=0x12`, `STAGE_TRIGGER=0x13`, `SERIAL_TRIGGER=0x14`, `STOP=0x15`, `PWM=0x17`
 - Produces: `crc32_atk(data: bytes) -> int`
@@ -174,8 +174,8 @@ import binascii
 
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.protocol import (
+from dl16_cli.errors import ProtocolError
+from dl16_cli.protocol import (
     Command,
     SUPPORTED_USB_IDS,
     UsbId,
@@ -244,11 +244,11 @@ Run:
 python3 -m pytest tests/test_protocol.py -v
 ```
 
-Expected: FAIL with `ModuleNotFoundError` or missing names from `atkdl16_cli.protocol`.
+Expected: FAIL with `ModuleNotFoundError` or missing names from `dl16_cli.protocol`.
 
 - [ ] **Step 3: Implement protocol module**
 
-Create `atkdl16_cli/protocol.py`:
+Create `dl16_cli/protocol.py`:
 
 ```python
 from __future__ import annotations
@@ -361,7 +361,7 @@ Expected: PASS, all current tests passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add atkdl16_cli/protocol.py tests/test_protocol.py
+git add dl16_cli/protocol.py tests/test_protocol.py
 git commit -m "feat: add ATK command frame builder"
 ```
 
@@ -370,11 +370,11 @@ git commit -m "feat: add ATK command frame builder"
 ### Task 3: PWM payload builder
 
 **Files:**
-- Create: `atkdl16_cli/pwm.py`
+- Create: `dl16_cli/pwm.py`
 - Test: `tests/test_pwm.py`
 
 **Interfaces:**
-- Consumes: `ProtocolError` from `atkdl16_cli.errors`
+- Consumes: `ProtocolError` from `dl16_cli.errors`
 - Produces: `PWM_BASE_HZ: int = 100_000_000`
 - Produces: `build_pwm_start_payload(channel: int, frequency_hz: int, duty_percent: float, byteorder: Literal["little", "big"] = "little") -> bytes`
 - Produces: `build_pwm_stop_payload(channel: int) -> bytes`
@@ -386,8 +386,8 @@ Create `tests/test_pwm.py`:
 ```python
 import pytest
 
-from atkdl16_cli.errors import ProtocolError
-from atkdl16_cli.pwm import PWM_BASE_HZ, build_pwm_start_payload, build_pwm_stop_payload
+from dl16_cli.errors import ProtocolError
+from dl16_cli.pwm import PWM_BASE_HZ, build_pwm_start_payload, build_pwm_stop_payload
 
 
 def test_pwm_base_frequency_matches_reverse_evidence():
@@ -440,11 +440,11 @@ Run:
 python3 -m pytest tests/test_pwm.py -v
 ```
 
-Expected: FAIL with missing `atkdl16_cli.pwm`.
+Expected: FAIL with missing `dl16_cli.pwm`.
 
 - [ ] **Step 3: Implement PWM module**
 
-Create `atkdl16_cli/pwm.py`:
+Create `dl16_cli/pwm.py`:
 
 ```python
 from __future__ import annotations
@@ -513,7 +513,7 @@ Expected: PASS, all current tests passed.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add atkdl16_cli/pwm.py tests/test_pwm.py
+git add dl16_cli/pwm.py tests/test_pwm.py
 git commit -m "feat: add PWM payload builder"
 ```
 
@@ -522,27 +522,27 @@ git commit -m "feat: add PWM payload builder"
 ### Task 4: USB backend boundary and dry-run device facade
 
 **Files:**
-- Create: `atkdl16_cli/usb.py`
-- Create: `atkdl16_cli/device.py`
+- Create: `dl16_cli/usb.py`
+- Create: `dl16_cli/device.py`
 - Test: `tests/test_device.py`
 
 **Interfaces:**
-- Consumes: `Command`, `UsbId`, `SUPPORTED_USB_IDS`, `build_transport_frame` from `atkdl16_cli.protocol`
-- Consumes: PWM payload functions from `atkdl16_cli.pwm`
+- Consumes: `Command`, `UsbId`, `SUPPORTED_USB_IDS`, `build_transport_frame` from `dl16_cli.protocol`
+- Consumes: PWM payload functions from `dl16_cli.pwm`
 - Produces: `DeviceInfo` dataclass
 - Produces: `UsbBackend` protocol with `list_devices() -> list[DeviceInfo]` and `send_frame(frame: bytes) -> bytes`
 - Produces: `DryRunBackend` class
-- Produces: `AtkDevice` class with `pwm_start`, `pwm_stop`, `stop`, `get_device_data_frame`
+- Produces: `Dl16Device` class with `pwm_start`, `pwm_stop`, `stop`, `get_device_data_frame`
 
 - [ ] **Step 1: Write failing device tests**
 
 Create `tests/test_device.py`:
 
 ```python
-from atkdl16_cli.device import AtkDevice
-from atkdl16_cli.protocol import Command, build_transport_frame
-from atkdl16_cli.pwm import build_pwm_start_payload, build_pwm_stop_payload
-from atkdl16_cli.usb import DeviceInfo, DryRunBackend
+from dl16_cli.device import Dl16Device
+from dl16_cli.protocol import Command, build_transport_frame
+from dl16_cli.pwm import build_pwm_start_payload, build_pwm_stop_payload
+from dl16_cli.usb import DeviceInfo, DryRunBackend
 
 
 def test_dry_run_backend_lists_configured_devices():
@@ -552,7 +552,7 @@ def test_dry_run_backend_lists_configured_devices():
 
 def test_device_pwm_start_sends_expected_transport_frame():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.pwm_start(channel=0, frequency_hz=1_000, duty_percent=50)
     expected = build_transport_frame(Command.PWM, build_pwm_start_payload(0, 1_000, 50))
     assert frame == expected
@@ -561,7 +561,7 @@ def test_device_pwm_start_sends_expected_transport_frame():
 
 def test_device_pwm_stop_sends_expected_transport_frame():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.pwm_stop(channel=3)
     expected = build_transport_frame(Command.PWM, build_pwm_stop_payload(3))
     assert frame == expected
@@ -570,7 +570,7 @@ def test_device_pwm_stop_sends_expected_transport_frame():
 
 def test_device_stop_without_channel_sends_empty_stop_payload():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.stop()
     expected = build_transport_frame(Command.STOP, b"")
     assert frame == expected
@@ -579,7 +579,7 @@ def test_device_stop_without_channel_sends_empty_stop_payload():
 
 def test_device_stop_with_channel_sends_one_byte_payload():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.stop(channel=2)
     expected = build_transport_frame(Command.STOP, b"\x02")
     assert frame == expected
@@ -588,7 +588,7 @@ def test_device_stop_with_channel_sends_one_byte_payload():
 
 def test_get_device_data_frame_is_built_without_sending():
     backend = DryRunBackend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
     frame = device.get_device_data_frame()
     assert frame == build_transport_frame(Command.GET_DEVICE_DATA, b"")
     assert backend.sent_frames == []
@@ -602,11 +602,11 @@ Run:
 python3 -m pytest tests/test_device.py -v
 ```
 
-Expected: FAIL with missing `atkdl16_cli.device` or `atkdl16_cli.usb`.
+Expected: FAIL with missing `dl16_cli.device` or `dl16_cli.usb`.
 
 - [ ] **Step 3: Implement USB backend boundary**
 
-Create `atkdl16_cli/usb.py`:
+Create `dl16_cli/usb.py`:
 
 ```python
 from __future__ import annotations
@@ -652,7 +652,7 @@ class DryRunBackend:
 
 - [ ] **Step 4: Implement device facade**
 
-Create `atkdl16_cli/device.py`:
+Create `dl16_cli/device.py`:
 
 ```python
 from __future__ import annotations
@@ -663,7 +663,7 @@ from .pwm import build_pwm_start_payload, build_pwm_stop_payload
 from .usb import UsbBackend
 
 
-class AtkDevice:
+class Dl16Device:
     def __init__(self, backend: UsbBackend) -> None:
         self.backend = backend
 
@@ -714,7 +714,7 @@ Expected: PASS, all current tests passed.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add atkdl16_cli/usb.py atkdl16_cli/device.py tests/test_device.py
+git add dl16_cli/usb.py dl16_cli/device.py tests/test_device.py
 git commit -m "feat: add dry-run USB device facade"
 ```
 
@@ -723,13 +723,13 @@ git commit -m "feat: add dry-run USB device facade"
 ### Task 5: Dry-run CLI for list/info/stop/PWM
 
 **Files:**
-- Create: `atkdl16_cli/cli.py`
+- Create: `dl16_cli/cli.py`
 - Test: `tests/test_cli.py`
 
 **Interfaces:**
-- Consumes: `AtkDevice` from `atkdl16_cli.device`
-- Consumes: `SUPPORTED_USB_IDS` from `atkdl16_cli.protocol`
-- Consumes: `DeviceInfo`, `DryRunBackend` from `atkdl16_cli.usb`
+- Consumes: `Dl16Device` from `dl16_cli.device`
+- Consumes: `SUPPORTED_USB_IDS` from `dl16_cli.protocol`
+- Consumes: `DeviceInfo`, `DryRunBackend` from `dl16_cli.usb`
 - Produces: `main(argv: list[str] | None = None) -> int`
 
 - [ ] **Step 1: Write failing CLI tests**
@@ -737,7 +737,7 @@ git commit -m "feat: add dry-run USB device facade"
 Create `tests/test_cli.py`:
 
 ```python
-from atkdl16_cli.cli import main
+from dl16_cli.cli import main
 
 
 def test_cli_list_dry_run_prints_supported_ids(capsys):
@@ -789,11 +789,11 @@ Run:
 python3 -m pytest tests/test_cli.py -v
 ```
 
-Expected: FAIL with missing `atkdl16_cli.cli`.
+Expected: FAIL with missing `dl16_cli.cli`.
 
 - [ ] **Step 3: Implement CLI module**
 
-Create `atkdl16_cli/cli.py`:
+Create `dl16_cli/cli.py`:
 
 ```python
 from __future__ import annotations
@@ -802,8 +802,8 @@ import argparse
 import sys
 from collections.abc import Sequence
 
-from .device import AtkDevice
-from .errors import AtkDl16Error
+from .device import Dl16Device
+from .errors import Dl16Error
 from .protocol import SUPPORTED_USB_IDS
 from .usb import DeviceInfo, DryRunBackend
 
@@ -813,7 +813,7 @@ def _print_frame(label: str, frame: bytes) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="atkdl16")
+    parser = argparse.ArgumentParser(prog="dl16")
     parser.add_argument("--dry-run", action="store_true", help="print frames without accessing USB hardware")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -848,7 +848,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("only --dry-run is available in this implementation plan")
 
     backend = _dry_backend()
-    device = AtkDevice(backend)
+    device = Dl16Device(backend)
 
     try:
         if args.command == "list":
@@ -874,7 +874,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         parser.error(f"unsupported command combination: {args}")
         return 2
-    except AtkDl16Error as exc:
+    except Dl16Error as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
@@ -908,7 +908,7 @@ Expected: PASS, all current tests passed.
 Run:
 
 ```bash
-python3 -m atkdl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50
+python3 -m dl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50
 ```
 
 Expected output contains:
@@ -926,7 +926,7 @@ and contains the inner frame hex:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add atkdl16_cli/cli.py tests/test_cli.py
+git add dl16_cli/cli.py tests/test_cli.py
 git commit -m "feat: add dry-run CLI commands"
 ```
 
@@ -947,7 +947,7 @@ git commit -m "feat: add dry-run CLI commands"
 Create `docs/protocol/protocol.md`:
 
 ```markdown
-# ATK DL16 Protocol Reference
+# DL16 Protocol Reference
 
 Status: partially implemented and still under reverse engineering.
 
@@ -1019,9 +1019,9 @@ Append to `docs/protocol/evidence-summary.md`:
 
 The first implementation plan turns the low-risk portions of this evidence into tested code:
 
-- `atkdl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
-- `atkdl16_cli.pwm` for PWM start/stop payloads.
-- `atkdl16_cli.device` and `atkdl16_cli.cli` for dry-run command frame generation.
+- `dl16_cli.protocol` for USB IDs, command IDs, frame construction, and CRC32 byte conversion.
+- `dl16_cli.pwm` for PWM start/stop payloads.
+- `dl16_cli.device` and `dl16_cli.cli` for dry-run command frame generation.
 ```
 
 - [ ] **Step 3: Verify documentation files exist and contain key terms**
@@ -1078,7 +1078,7 @@ Expected: PASS, all tests passed.
 Run:
 
 ```bash
-python3 -m atkdl16_cli.cli --dry-run list
+python3 -m dl16_cli.cli --dry-run list
 ```
 
 Expected output contains exactly these USB ID substrings:
@@ -1094,7 +1094,7 @@ Expected output contains exactly these USB ID substrings:
 Run:
 
 ```bash
-python3 -m atkdl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50
+python3 -m dl16_cli.cli --dry-run pwm start --channel 0 --freq 1000 --duty 50
 ```
 
 Expected output contains:
@@ -1114,7 +1114,7 @@ and contains:
 Run:
 
 ```bash
-python3 -m atkdl16_cli.cli --dry-run stop --channel 2
+python3 -m dl16_cli.cli --dry-run stop --channel 2
 ```
 
 Expected output contains:

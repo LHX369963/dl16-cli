@@ -1,7 +1,7 @@
 import json
 
-from atkdl16_cli.capture import SamplingParameters
-from atkdl16_cli.streaming import stream_capture_to_disk
+from dl16_cli.capture import SamplingParameters
+from dl16_cli.streaming import stream_capture_to_disk
 
 
 def _packet(channel, data):
