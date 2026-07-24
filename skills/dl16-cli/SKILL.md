@@ -37,6 +37,16 @@ Use bounded durations and trigger timeouts for unattended hardware tests. On fai
 
 Do not claim GUI parity, untested protocol behavior, accuracy, or another model's capability. Separate hardware evidence from unit-test coverage.
 
+## Handle CLI Failures Without Losing The Task
+
+Report every CLI error to the user as soon as it occurs, including the failing command and immediate impact, but do not stop work solely because an error occurred. Keep the requested task as the first priority:
+
+- If the error blocks the task, diagnose it and attempt a repair immediately so the task can continue.
+- If the error does not block the task, record enough evidence to reproduce it, finish the requested task first, and then diagnose and attempt a repair.
+- After a repair, run focused regression tests plus the repository's required test suite and any safe connected checks needed to establish the fix.
+- When the repair is complete and sufficiently verified, commit only the repair-related changes and push that commit to the current repository remote. Do not include unrelated pre-existing worktree changes.
+- If the repair is incomplete, cannot be pushed, or lacks sufficient testing, continue any remaining feasible task work and explain the error, attempted repair, remaining risk, and missing validation in detail in the final report.
+
 ## Verify Changes
 
 Run the repository test suite after code changes:
