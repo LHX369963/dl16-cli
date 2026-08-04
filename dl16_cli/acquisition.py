@@ -87,8 +87,14 @@ def capture_to_disk(
     enabled = [channel in channels for channel in range(16)]
     parser = Dl16StreamParser()
     written = {channel: 0 for channel in channels}
-    trailer_bytes = 1 if params.is_rle else 12
+    # Ordinary captures have returned different completion suffix lengths on
+    # real DL16 runs (including 6, 8, and 12 bytes).  Sample bytes are already
+    # length-defined, so do not wait for a fixed suffix that may never arrive.
+    # RLE still needs its one expanded sentinel byte to distinguish a complete
+    # hardware run from a shortened type-6 completion.
+    trailer_bytes = 1 if params.is_rle else 0
     target_wire_bytes = expected_bytes + trailer_bytes
+    discarded_suffix = {channel: 0 for channel in channels}
     capture_started = False
     sample_started = False
     hardware_complete = False
@@ -127,6 +133,8 @@ def capture_to_disk(
                     data = block.packed_samples[:remaining]
                     channel_streams[channel].write(data)
                     written[channel] += len(data)
+                    if not params.is_rle:
+                        discarded_suffix[channel] += len(block.packed_samples) - len(data)
                     sample_started = True
                 elif params.is_rle and sample_started and packet.packet_type == 6:
                     hardware_complete = True
@@ -181,7 +189,9 @@ def capture_to_disk(
         "requested_sample_depth": depth,
         "sample_depth": actual_depth,
         "capture_shortened_by_hardware": shortened,
-        "transport_trailer_bytes_removed": trailer_bytes,
+        "transport_trailer_bytes_removed": (
+            trailer_bytes if params.is_rle else min(discarded_suffix.values())
+        ),
         "requested_channels": channels,
         "trigger": trigger_manifest,
         "channels": {

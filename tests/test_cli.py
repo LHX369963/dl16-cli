@@ -365,6 +365,32 @@ def test_cli_capture_run_collects_interleaved_multiple_channels(monkeypatch, tmp
     assert set(manifest["channels"]) == {"6", "7"}
 
 
+def test_cli_capture_run_accepts_variable_or_missing_ordinary_trailer(
+    monkeypatch, tmp_path
+):
+    import dl16_cli.cli as cli
+
+    backend = CliFakeBackend()
+    backend.read_chunks = [
+        _capture_packet(1, b"\x06\x00" + b"\x66" * 125 + b"\xa6" * 6)
+        + _capture_packet(1, b"\x07\x00" + b"\x77" * 125)
+    ]
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: backend)
+    monkeypatch.setattr(cli.Dl16Device, "initialize_connection", lambda self: b"DL16")
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    output = tmp_path / "variable-trailer"
+    rc = cli.main([
+        "capture", "run", "--buffer", "--channels", "6,7", "--set-time", "1",
+        "--set-hz", "1000000", "--trigger-position", "0", "--threshold", "1.2",
+        "--sample-index", "1", "--output-dir", str(output),
+    ])
+    assert rc == 0
+    assert (output / "channel-06.bin").read_bytes() == b"\x66" * 125
+    assert (output / "channel-07.bin").read_bytes() == b"\x77" * 125
+    manifest = __import__("json").loads((output / "manifest.json").read_text())
+    assert manifest["transport_trailer_bytes_removed"] == 0
+
+
 def test_cli_capture_stream_writes_incrementally_without_buffer_flag(monkeypatch, tmp_path):
     import dl16_cli.cli as cli
 
