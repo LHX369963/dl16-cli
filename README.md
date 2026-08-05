@@ -10,10 +10,10 @@
 
 ```bash
 python3 -m pip install '.[usb]'
-dl16 --dry-run list
-dl16 list
-dl16 info
 ```
+
+`dl16 list` and `dl16 info` are available when discovery or identity diagnosis
+is needed; they are not required before normal PWM or capture commands.
 
 需要 CAN、LIN、JTAG、1-Wire 等扩展协议解码时，安装 sigrok 解码库：
 

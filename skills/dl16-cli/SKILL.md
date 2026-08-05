@@ -7,7 +7,7 @@ description: Operate, test, debug, or document the DL16 logic analyzer through t
 
 ## Establish Context
 
-Resolve the repository as the directory two levels above this Skill's real path. Do not assume the current working directory. Read `README.md` before operating hardware. Read `docs/protocol/protocol.md`, `docs/protocol/evidence-summary.md`, and the latest `docs/acceptance-*.md` only when the task needs protocol or validation detail.
+Resolve the repository as the directory two levels above this Skill's real path. Do not assume the current working directory. Read `README.md`, protocol evidence, or acceptance reports only when the task needs that detail.
 
 Treat DL16 as the only supported model. Do not infer DL32 behavior from shared vendor documentation.
 
@@ -17,13 +17,7 @@ Use `dl16` for device work. Prefer the repository's `.venv/bin/dl16` when presen
 
 Do not call `dl16_cli` Python internals, libusb, or raw protocol functions when a CLI workflow exists. Never issue the USB `SET_CONFIGURATION` operation; the project intentionally avoids it because it breaks the DL16 link.
 
-Start diagnosis with:
-
-```bash
-dl16 --dry-run list
-dl16 list
-dl16 info
-```
+Use `list` or `info` only when device discovery, selection, or identity is uncertain. Do not make dry-run, discovery, or identity queries routine prerequisites for an otherwise direct capture or PWM task.
 
 Use `capture run` for finite Stream/Buffer/RLE acquisition and `capture stream` for incremental long-running capture. Let the CLI choose `--sample-index` unless investigating the mapping itself. Respect the channel/rate limits in `README.md`.
 
@@ -55,4 +49,4 @@ Run the repository test suite after code changes:
 python -m pytest -q
 ```
 
-Scale connected tests to the change. Confirm device identity first, use documented loopback wiring, retain exact commands/results, and restore PWM/capture state afterward.
+Scale connected tests to the change and use documented loopback wiring when relevant. Do not require routine state snapshots or restoration; stop only PWM/streaming activity started by the task.
