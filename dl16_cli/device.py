@@ -45,12 +45,7 @@ class Dl16Device:
     def get_device_data(self) -> bytes:
         return self.backend.send_frame(self.get_device_data_frame())
 
-    def initialize_connection(
-        self, *, sleep_fn: Callable[[float], None] = time.sleep
-    ) -> bytes:
-        recover = getattr(self.backend, "recover_ffcc_link", None)
-        if callable(recover):
-            recover()
+    def _initialize_handshake(self, sleep_fn: Callable[[float], None]) -> bytes:
         sleep_fn(0.4)
 
         mcu_response: bytes | None = None
@@ -71,7 +66,7 @@ class Dl16Device:
             if attempt < 5:
                 sleep_fn(0.05)
         if mcu_response is None:
-            raise UsbBackendError("DL16 MCU did not answer after USB link recovery")
+            raise UsbBackendError("DL16 MCU did not answer during link initialization")
 
         for index in (0, 1):
             self.backend.write_chunk(
@@ -96,6 +91,18 @@ class Dl16Device:
         if b"DL16" not in response:
             raise UsbBackendError("DL16 device information response was not valid")
         return response
+
+    def initialize_connection(
+        self, *, sleep_fn: Callable[[float], None] = time.sleep
+    ) -> bytes:
+        try:
+            return self._initialize_handshake(sleep_fn)
+        except UsbBackendError:
+            recover = getattr(self.backend, "recover_ffcc_link", None)
+            if not callable(recover):
+                raise
+            recover()
+            return self._initialize_handshake(sleep_fn)
 
     def stop(self, channel: int | None = None) -> bytes:
         if channel is None:

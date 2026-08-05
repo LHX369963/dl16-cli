@@ -80,15 +80,35 @@ def test_get_device_data_sends_query_frame():
     assert backend.sent_frames == [expected]
 
 
-def test_initialize_connection_recovers_waits_and_runs_mcu_fpga_handshake():
+def test_initialize_connection_avoids_recovery_when_handshake_succeeds():
     backend = InitializationBackend()
     sleeps = []
     response = Dl16Device(backend).initialize_connection(sleep_fn=sleeps.append)
-    assert backend.recovered is True
+    assert backend.recovered is False
     assert sleeps[0] == 0.4
     assert backend.written_chunks[0][:3] == b"\x0a\x81\x0b"
     assert backend.written_chunks[-2][:4] == b"\x0a\x87\x00\x0b"
     assert backend.written_chunks[-1][:4] == b"\x0a\x87\x01\x0b"
+    assert b"DL16" in response
+
+
+def test_initialize_connection_recovers_only_after_handshake_failure():
+    class RecoveringBackend(InitializationBackend):
+        def __init__(self):
+            super().__init__()
+            self._read_chunks = [b""] * 6
+
+        def recover_ffcc_link(self):
+            self.recovered = True
+            self._read_chunks = [
+                b"\x0a\x81\x01mcu" + bytes(505),
+                b"\x0a\x87\x01fpga0" + bytes(503),
+                b"\x0a\x87\x02fpga1" + bytes(503),
+            ]
+
+    backend = RecoveringBackend()
+    response = Dl16Device(backend).initialize_connection(sleep_fn=lambda _: None)
+    assert backend.recovered is True
     assert b"DL16" in response
 
 

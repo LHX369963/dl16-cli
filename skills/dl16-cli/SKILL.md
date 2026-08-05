@@ -19,6 +19,8 @@ Do not call `dl16_cli` Python internals, libusb, or raw protocol functions when 
 
 Use `list` or `info` only when device discovery, selection, or identity is uncertain. Do not make dry-run, discovery, or identity queries routine prerequisites for an otherwise direct capture or PWM task.
 
+Let normal initialization try the MCU/FPGA handshake directly. USB endpoint clearing and device reset are failure recovery only; do not invoke them as routine preflight.
+
 Use `capture run` for finite Stream/Buffer/RLE acquisition and `capture stream` for incremental long-running capture. Let the CLI choose `--sample-index` unless investigating the mapping itself. Respect the channel/rate limits in `README.md`.
 
 Use `dl16 session` for workflows that configure multiple PWM outputs and then capture. Separate CLI processes reinitialize USB/FPGA state. JSONL is the session transport, not a replacement for the CLI.

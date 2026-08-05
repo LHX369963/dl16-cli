@@ -14,6 +14,8 @@ python3 -m pip install '.[usb]'
 
 `dl16 list` and `dl16 info` are available when discovery or identity diagnosis
 is needed; they are not required before normal PWM or capture commands.
+Normal initialization tries the MCU/FPGA handshake without resetting USB.
+Endpoint clearing and device reset are attempted only after that handshake fails.
 
 需要 CAN、LIN、JTAG、1-Wire 等扩展协议解码时，安装 sigrok 解码库：
 
