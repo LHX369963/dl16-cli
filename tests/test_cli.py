@@ -105,11 +105,11 @@ def test_cli_non_dry_run_pwm_start_uses_backend_factory(monkeypatch, capsys):
 
 
 def test_pwm_verify_parses_units_and_plans_compact_capture():
-    import dl16_cli.cli as cli
+    import dl16_cli.pwm_verify as pwm_verify
 
-    assert cli._parse_pwm_verify_spec("1kHz,25%") == (1000, 25.0)
-    assert cli._parse_pwm_verify_spec("50MHz,120") == (20_000_000, 100.0)
-    assert cli._pwm_verify_plan([(0, 0, 1000, 25), (1, 8, 2000, 75)]) == (
+    assert pwm_verify._parse_pwm_verify_spec("1kHz,25%") == (1000, 25.0)
+    assert pwm_verify._parse_pwm_verify_spec("50MHz,120") == (20_000_000, 100.0)
+    assert pwm_verify._pwm_verify_plan([(0, 0, 1000, 25), (1, 8, 2000, 75)]) == (
         1_000_000, 20.0,
     )
 
@@ -133,7 +133,7 @@ def test_cli_pwm_verify_is_one_compact_command(monkeypatch, capsys):
 
 
 def test_pwm_verify_warns_without_suppressing_results(monkeypatch, capsys):
-    import dl16_cli.cli as cli
+    import dl16_cli.pwm_verify as pwm_verify
 
     class Device:
         def initialize_connection(self):
@@ -145,8 +145,8 @@ def test_pwm_verify_warns_without_suppressing_results(monkeypatch, capsys):
         def stop_no_response(self):
             pass
 
-    monkeypatch.setattr(cli, "capture_to_disk", lambda *args, **kwargs: {})
-    monkeypatch.setattr(cli, "measure_pwm_capture", lambda directory, channel: {
+    monkeypatch.setattr(pwm_verify, "capture_to_disk", lambda *args, **kwargs: {})
+    monkeypatch.setattr(pwm_verify, "measure_pwm_capture", lambda directory, channel: {
         "frequency_hz": 900.0,
         "min_frequency_hz": 850.0,
         "max_frequency_hz": 950.0,
@@ -154,7 +154,7 @@ def test_pwm_verify_warns_without_suppressing_results(monkeypatch, capsys):
         "min_duty_percent": 28.0,
         "max_duty_percent": 32.0,
     })
-    result = cli._verify_pwm_pair(Device(), object(), [(0, 0, 1000, 25.0)])
+    result = pwm_verify._verify_pwm_pair(Device(), object(), [(0, 0, 1000, 25.0)])
     assert result[0]["frequency_hz"] == 900.0
     assert capsys.readouterr().err == "warning: CH0.freq=900 CH0.duty=30\n"
 
