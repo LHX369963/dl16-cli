@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 from enum import IntEnum
-from typing import Sequence
 
 from .errors import ProtocolError
 
@@ -104,9 +105,6 @@ def build_simple_trigger_payload(
     ) + bytes(
         (1 if collect_type == 2 else 0, 1 if collect_type == 3 else 0)
     )
-
-
-from dataclasses import dataclass
 
 
 @dataclass(frozen=True)

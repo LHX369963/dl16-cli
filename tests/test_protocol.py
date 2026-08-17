@@ -2,8 +2,8 @@ import pytest
 
 from dl16_cli.errors import ProtocolError
 from dl16_cli.protocol import (
-    Command,
     SUPPORTED_USB_IDS,
+    Command,
     UsbId,
     build_inner_frame,
     build_transport_frame,
@@ -14,11 +14,11 @@ from dl16_cli.protocol import (
 
 
 def test_supported_usb_ids_match_reverse_evidence():
-    assert SUPPORTED_USB_IDS == (
+    assert (
         UsbId(0x1A86, 0xFFCC),
         UsbId(0x1A86, 0x6A6B),
         UsbId(0x04B4, 0x6A6A),
-    )
+    ) == SUPPORTED_USB_IDS
 
 
 def test_command_values_match_reverse_evidence():

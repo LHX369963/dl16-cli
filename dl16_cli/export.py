@@ -4,10 +4,11 @@ import csv
 import heapq
 import json
 import mmap
+from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator, TextIO
+from typing import TextIO
 
 from .errors import ProtocolError
 
@@ -71,7 +72,7 @@ def _write_csv(
 def _merged_transitions(
     maps: list[mmap.mmap], channels: list[int], depth: int
 ) -> Iterator[tuple[int, int, int]]:
-    return heapq.merge(*(_transitions(data, depth, channel) for data, channel in zip(maps, channels)))
+    return heapq.merge(*(_transitions(data, depth, channel) for data, channel in zip(maps, channels, strict=False)))
 
 
 def _write_edges(
@@ -91,11 +92,9 @@ def _write_vcd(
 ) -> int:
     symbols = [chr(33 + index) for index in range(len(channels))]
     output.write("$timescale 1ns $end\n$scope module dl16 $end\n")
-    for channel, symbol in zip(channels, symbols):
-        output.write(f"$var wire 1 {symbol} CH{channel} $end\n")
+    output.writelines(f"$var wire 1 {symbol} CH{channel} $end\n" for channel, symbol in zip(channels, symbols, strict=False))
     output.write("$upscope $end\n$enddefinitions $end\n#0\n")
-    for data, symbol in zip(maps, symbols):
-        output.write(f"{_level(data, 0)}{symbol}\n")
+    output.writelines(f"{_level(data, 0)}{symbol}\n" for data, symbol in zip(maps, symbols, strict=False))
 
     rows = 0
     previous_index: int | None = None

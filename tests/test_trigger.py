@@ -1,7 +1,12 @@
 import pytest
 
 from dl16_cli.errors import ProtocolError
-from dl16_cli.trigger import TriggerState, build_simple_trigger_payload, pack_trigger_states, parse_trigger_states
+from dl16_cli.trigger import (
+    TriggerState,
+    build_simple_trigger_payload,
+    pack_trigger_states,
+    parse_trigger_states,
+)
 
 
 def test_trigger_state_nibble_map_matches_jump_table():

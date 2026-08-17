@@ -147,6 +147,19 @@ def test_pyusb_backend_open_claims_interface_without_resetting_active_configurat
     assert dev.configuration_set is False
 
 
+def test_pyusb_backend_auto_selects_only_supported_device_and_rejects_ambiguity():
+    from dl16_cli.errors import UsbBackendError
+    from dl16_cli.usb import PyUsbBackend
+
+    first, _, _ = make_supported_fake_device()
+    other = FakeDevice(0x04B4, 0x6A6A)
+    backend = PyUsbBackend(usb_core=FakeCore([first]), usb_util=FakeUtil)
+    assert backend._find_device() is first
+    backend = PyUsbBackend(usb_core=FakeCore([first, other]), usb_util=FakeUtil)
+    with pytest.raises(UsbBackendError, match="multiple DL16"):
+        backend._find_device()
+
+
 def test_pyusb_backend_open_wraps_permission_error_with_udev_hint():
     from dl16_cli.errors import UsbBackendError
     from dl16_cli.usb import PyUsbBackend
@@ -160,7 +173,7 @@ def test_pyusb_backend_open_wraps_permission_error_with_udev_hint():
 
     dev, _, _ = make_supported_fake_device()
     backend = PyUsbBackend(device=dev, usb_core=FakeCore([dev]), usb_util=PermissionUtil)
-    with pytest.raises(UsbBackendError, match="udev/99-dl16.rules"):
+    with pytest.raises(UsbBackendError, match=r"udev/99-dl16\.rules"):
         backend.open()
 
 

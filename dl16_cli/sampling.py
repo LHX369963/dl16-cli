@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from .errors import ProtocolError
 
-
 # Recovered from the DL16 setting index and verified against looped-back PWM.
 # Index 6 was independently confirmed at 20 MHz. Index 7 repeatedly produces
 # no sample packets on the connected DL16, so it is intentionally excluded

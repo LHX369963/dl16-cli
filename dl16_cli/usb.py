@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import contextlib
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
-import time
 
 from .errors import ProtocolError, UsbBackendError
 from .protocol import SUPPORTED_USB_IDS
@@ -179,8 +180,8 @@ class PyUsbBackend:
         devices = []
         try:
             for item in self.usb_core.find(find_all=True):
-                vid = int(getattr(item, "idVendor"))
-                pid = int(getattr(item, "idProduct"))
+                vid = int(item.idVendor)
+                pid = int(item.idProduct)
                 if self.vid_pid is not None and (vid, pid) != self.vid_pid:
                     continue
                 if is_supported_usb_id(vid, pid):
@@ -219,10 +220,8 @@ class PyUsbBackend:
 
     def _release_after_open_failure(self) -> None:
         if self.device is not None and self._claimed:
-            try:
+            with contextlib.suppress(Exception):
                 self.usb_util.release_interface(self.device, 0)
-            except Exception:
-                pass
         self._claimed = False
         self.write_endpoint = None
         self.read_endpoint = None
@@ -365,12 +364,18 @@ class PyUsbBackend:
         )
 
     def _find_device(self) -> Any | None:
-        candidates = [self.vid_pid] if self.vid_pid is not None else [(item.vid, item.pid) for item in SUPPORTED_USB_IDS]
-        for vid, pid in candidates:
-            dev = self.usb_core.find(idVendor=vid, idProduct=pid)
-            if dev is not None:
-                return dev
-        return None
+        if self.vid_pid is not None:
+            devices = list(self.usb_core.find(
+                find_all=True, idVendor=self.vid_pid[0], idProduct=self.vid_pid[1]
+            ) or [])
+        else:
+            devices = [
+                device for device in (self.usb_core.find(find_all=True) or [])
+                if is_supported_usb_id(int(device.idVendor), int(device.idProduct))
+            ]
+        if len(devices) > 1:
+            raise UsbBackendError("multiple DL16 devices found; specify --vid-pid")
+        return devices[0] if devices else None
 
     def _detach_kernel_driver(self, interface: int) -> None:
         if not hasattr(self.device, "is_kernel_driver_active"):

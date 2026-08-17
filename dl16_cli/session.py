@@ -22,7 +22,7 @@ class Dl16Session:
         self.device = device if device is not None else Dl16Device(backend)
         self.is_open = False
 
-    def open(self) -> "Dl16Session":
+    def open(self) -> Dl16Session:
         if not self.is_open:
             self.device.initialize_connection()
             self.is_open = True
@@ -35,7 +35,7 @@ class Dl16Session:
             finally:
                 self.is_open = False
 
-    def __enter__(self) -> "Dl16Session":
+    def __enter__(self) -> "Dl16Session":  # noqa: UP037
         return self.open()
 
     def __exit__(self, exc_type, exc, traceback) -> None:

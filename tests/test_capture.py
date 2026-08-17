@@ -3,11 +3,11 @@ import pytest
 from dl16_cli.capture import (
     Dl16StreamParser,
     SamplingParameters,
+    build_parameter_setting_payload,
     decode_channel_packet,
     decode_rle_pairs,
-    iter_sample_bits,
     interpret_capture_packet,
-    build_parameter_setting_payload,
+    iter_sample_bits,
 )
 from dl16_cli.errors import ProtocolError
 

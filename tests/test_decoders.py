@@ -1,6 +1,10 @@
 import json
 
-from dl16_cli.decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
+from dl16_cli.decoders import (
+    decode_i2c_capture,
+    decode_spi_capture,
+    decode_uart_capture,
+)
 
 
 def _write_capture(tmp_path, rate, signals):

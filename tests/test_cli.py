@@ -646,6 +646,7 @@ def test_cli_capture_run_rejects_trigger_channel_that_is_not_captured(capsys, tm
 
 def test_cli_capture_run_times_out_when_trigger_never_matches(monkeypatch, tmp_path, capsys):
     import itertools
+
     import dl16_cli.acquisition as acquisition
     import dl16_cli.cli as cli
 

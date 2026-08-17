@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import re
 import sys
 import tempfile
 import time
-from pathlib import Path
 from collections.abc import Sequence
+from pathlib import Path
 
+from .acquisition import capture_to_disk
 from .capture import (
     Dl16CapturePacket,
     Dl16StreamParser,
@@ -17,13 +19,12 @@ from .capture import (
     decode_channel_packet,
     interpret_capture_packet,
 )
-from .acquisition import capture_to_disk
-from .device import Dl16Device
 from .decoders import decode_i2c_capture, decode_spi_capture, decode_uart_capture
+from .device import Dl16Device
 from .errors import Dl16Error
 from .export import export_capture
-from .measure import measure_pwm_capture
 from .filtering import filter_glitches
+from .measure import measure_pwm_capture
 from .protocol import SUPPORTED_USB_IDS, parse_hex_payload
 from .sampling import resolve_sample_index, validate_capture_combination
 from .search import search_capture
@@ -372,7 +373,7 @@ def _read_capture_packets(
     parser = Dl16StreamParser()
     packets: list[Dl16CapturePacket] = []
     try:
-        stream = Path(output).open("wb")
+        stream = Path(output).open("wb")  # noqa: SIM115 - translated before context use
     except OSError as exc:
         raise Dl16Error(f"cannot open capture output {output!r}: {exc}") from exc
     with stream:
@@ -553,7 +554,7 @@ def _verify_pwm_pair(
                 measured[input_channel] = measure_pwm_capture(capture_dir, channel=input_channel)
     results = [measured[input_channel] for _, input_channel, _, _ in requests]
     warnings: list[str] = []
-    for (_, input_channel, expected_frequency, expected_duty), result in zip(requests, results):
+    for (_, input_channel, expected_frequency, expected_duty), result in zip(requests, results, strict=False):
         frequency = result.get("frequency_hz")
         duty = result.get("duty_percent")
         if frequency is None:
@@ -889,7 +890,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             assert run_channels is not None
             assert run_sample_index is not None
-            manifest = capture_to_disk(
+            capture_to_disk(
                 device,
                 backend,
                 params,
@@ -917,7 +918,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sample_index=stream_sample_index,
                 collect_type=1,
             )
-            manifest = stream_capture_to_disk(
+            stream_capture_to_disk(
                 device, backend, params,
                 channels=stream_channels,
                 output_dir=args.output_dir,
@@ -958,10 +959,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         close = getattr(backend, "close", None)
         if callable(close):
-            try:
+            with contextlib.suppress(Exception):
                 close()
-            except Exception:
-                pass
 
 
 if __name__ == "__main__":

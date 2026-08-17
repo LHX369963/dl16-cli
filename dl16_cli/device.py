@@ -4,8 +4,7 @@ import time
 from collections.abc import Callable
 
 from .capture import SamplingParameters, build_parameter_setting_payload
-from .errors import ProtocolError
-from .errors import UsbBackendError
+from .errors import ProtocolError, UsbBackendError
 from .protocol import Command, build_transport_frame
 from .pwm import build_pwm_start_payload, build_pwm_stop_payload
 from .trigger import (
