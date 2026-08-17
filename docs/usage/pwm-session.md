@@ -7,9 +7,19 @@ dl16 pwm start --channel 0 --freq 1000000 --duty 75
 dl16 pwm stop --channel 0
 ```
 
-Stop PWM channels started by the task. Do not restore unrelated analyzer state.
-Use bounded durations and trigger timeouts for unattended work; stop active
-streaming on completion or failure.
+For the fixed PWM0→CH0 and PWM1→CH8 loopback, one command sets both outputs,
+chooses a compact Buffer capture, measures all complete periods, and leaves PWM
+running:
+
+```bash
+dl16 pwm verify --pwm0 1kHz,25 --pwm1 2kHz,75
+```
+
+It prints only `frequency duty` per requested PWM. Out-of-range frequency/duty
+is normalized internally; deviations or variation produce one concise warning.
+
+Apply requested PWM state directly; do not inspect, restore, or stop unrelated
+activity.
 
 Separate CLI processes reinitialize the USB/FPGA link. For multiple PWM settings
 followed by capture, use a JSONL `session`:

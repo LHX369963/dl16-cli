@@ -3,7 +3,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 from collections.abc import Sequence
@@ -80,6 +82,11 @@ def _build_parser() -> argparse.ArgumentParser:
     pwm_start.add_argument("--duty", type=float, required=True)
     pwm_stop = pwm_sub.add_parser("stop", help="stop PWM")
     pwm_stop.add_argument("--channel", type=int, required=True)
+    pwm_verify = pwm_sub.add_parser("verify", help="set PWM, capture inputs, and measure in one call")
+    pwm_verify.add_argument("--pwm0", help="frequency,duty; for example 1kHz,25")
+    pwm_verify.add_argument("--pwm1", help="frequency,duty; for example 2kHz,75")
+    pwm_verify.add_argument("--input0", type=int, default=0, help="input wired to PWM0 (default: 0)")
+    pwm_verify.add_argument("--input1", type=int, default=8, help="input wired to PWM1 (default: 8)")
 
     capture = sub.add_parser("capture", help="capture configuration and acquisition")
     capture_sub = capture.add_subparsers(dest="capture_command", required=True)
@@ -166,6 +173,7 @@ def _build_parser() -> argparse.ArgumentParser:
     measure = capture_sub.add_parser("measure", help="measure PWM frequency and duty from a capture")
     measure.add_argument("--input-dir", required=True)
     measure.add_argument("--channel", type=int, required=True)
+    measure.add_argument("--json", action="store_true", help="show complete measurement metadata")
     sigrok = capture_sub.add_parser("sigrok", help="decode through the sigrok protocol library")
     sigrok_mode = sigrok.add_mutually_exclusive_group()
     sigrok_mode.add_argument("--list", action="store_true", help="list installed protocol decoders")
@@ -473,6 +481,101 @@ def _run_single_channel_capture(
     )
 
 
+def _parse_pwm_verify_spec(value: str) -> tuple[int, float]:
+    try:
+        frequency_text, duty_text = (part.strip() for part in value.split(",", 1))
+    except ValueError as exc:
+        raise Dl16Error("PWM verify values use frequency,duty") from exc
+    match = re.fullmatch(
+        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+))\s*([kKmM]?[hH][zZ])?",
+        frequency_text,
+    )
+    if match is None:
+        raise Dl16Error(f"invalid PWM frequency {frequency_text!r}")
+    scale = {None: 1.0, "hz": 1.0, "khz": 1e3, "mhz": 1e6}[match.group(2).lower() if match.group(2) else None]
+    frequency = round(float(match.group(1)) * scale)
+    try:
+        duty = float(duty_text.removesuffix("%"))
+    except ValueError as exc:
+        raise Dl16Error(f"invalid PWM duty {duty_text!r}") from exc
+    return min(20_000_000, max(1, frequency)), min(100.0, max(0.0, duty))
+
+
+def _pwm_verify_plan(requests: list[tuple[int, int, int, float]]) -> tuple[int, float]:
+    fastest = max(frequency for _, _, frequency, _ in requests)
+    slowest = min(frequency for _, _, frequency, _ in requests)
+    target_rate = fastest * 50
+    rates = (1, 2, 4, 5, 10, 20, 40, 50, 100, 200, 250, 500)
+    sample_rate = next((rate * 1_000_000 for rate in rates if rate * 1_000_000 >= target_rate), 500_000_000)
+    duration_ms = max(2.0, 20_000.0 / slowest)
+    return sample_rate, duration_ms
+
+
+def _verify_pwm_pair(
+    device: Dl16Device, backend: UsbBackend, requests: list[tuple[int, int, int, float]],
+) -> list[dict]:
+    device.initialize_connection()
+    for pwm_channel, _, frequency, duty in requests:
+        device.pwm_start(pwm_channel, frequency, duty)
+    combined_rate, combined_duration = _pwm_verify_plan(requests)
+    groups = (
+        [requests]
+        if combined_rate * combined_duration / 1000 <= 50_000_000
+        else [[request] for request in requests]
+    )
+    measured: dict[int, dict] = {}
+    with tempfile.TemporaryDirectory(prefix="dl16-pwm-") as directory:
+        for index, group in enumerate(groups):
+            sample_rate, duration_ms = _pwm_verify_plan(group)
+            validate_capture_combination(sample_rate, len(group), is_buffer=True)
+            params = SamplingParameters(
+                set_time=duration_ms,
+                set_hz=sample_rate,
+                trigger_position_percent=0,
+                threshold_level=1.2,
+                sample_index=resolve_sample_index(sample_rate, None),
+                is_buffer=True,
+                collect_type=1,
+            )
+            capture_dir = Path(directory) / str(index)
+            capture_to_disk(
+                device,
+                backend,
+                params,
+                channels=[input_channel for _, input_channel, _, _ in group],
+                output_dir=capture_dir,
+                read_size=16384,
+                sleep_fn=time.sleep,
+                initialize=False,
+                overwrite=True,
+            )
+            for _, input_channel, _, _ in group:
+                measured[input_channel] = measure_pwm_capture(capture_dir, channel=input_channel)
+    results = [measured[input_channel] for _, input_channel, _, _ in requests]
+    warnings: list[str] = []
+    for (_, input_channel, expected_frequency, expected_duty), result in zip(requests, results):
+        frequency = result.get("frequency_hz")
+        duty = result.get("duty_percent")
+        if frequency is None:
+            warnings.append(f"CH{input_channel}=no-period")
+            continue
+        min_frequency = float(result.get("min_frequency_hz", frequency))
+        max_frequency = float(result.get("max_frequency_hz", frequency))
+        min_duty = float(result.get("min_duty_percent", duty))
+        max_duty = float(result.get("max_duty_percent", duty))
+        if abs(float(frequency) - expected_frequency) > expected_frequency * 0.02:
+            warnings.append(f"CH{input_channel}.freq={float(frequency):.6g}")
+        elif max_frequency - min_frequency > float(frequency) * 0.02:
+            warnings.append(f"CH{input_channel}.freq={min_frequency:.6g}..{max_frequency:.6g}")
+        if abs(float(duty) - expected_duty) > 1.0:
+            warnings.append(f"CH{input_channel}.duty={float(duty):.6g}")
+        elif max_duty - min_duty > 2.0:
+            warnings.append(f"CH{input_channel}.duty={min_duty:.6g}..{max_duty:.6g}")
+    if warnings:
+        print("warning: " + " ".join(warnings), file=sys.stderr)
+    return results
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
@@ -544,7 +647,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }, sort_keys=True))
                 return 0
             if args.capture_command == "measure":
-                print(json.dumps(measure_pwm_capture(args.input_dir, channel=args.channel), sort_keys=True))
+                result = measure_pwm_capture(args.input_dir, channel=args.channel)
+                if args.json:
+                    print(json.dumps(result, sort_keys=True))
+                else:
+                    print(f"{result['frequency_hz']} {result['duty_percent']}")
                 return 0
             if args.capture_command == "sigrok":
                 if args.list:
@@ -646,6 +753,28 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(f"{info.usb_id} path={info.path} speed={info.speed}")
             return 0
 
+        if args.command == "pwm" and args.pwm_command == "verify":
+            if args.dry_run:
+                raise Dl16Error("pwm verify requires connected hardware")
+            requests: list[tuple[int, int, int, float]] = []
+            if args.pwm0 is not None:
+                frequency, duty = _parse_pwm_verify_spec(args.pwm0)
+                requests.append((0, args.input0, frequency, duty))
+            if args.pwm1 is not None:
+                frequency, duty = _parse_pwm_verify_spec(args.pwm1)
+                requests.append((1, args.input1, frequency, duty))
+            if not requests:
+                raise Dl16Error("pwm verify requires --pwm0 and/or --pwm1")
+            inputs = [input_channel for _, input_channel, _, _ in requests]
+            if any(not 0 <= channel <= 15 for channel in inputs):
+                raise Dl16Error("PWM verify inputs must be in range 0..15")
+            if len(set(inputs)) != len(inputs):
+                raise Dl16Error("PWM verify inputs must be distinct")
+            results = _verify_pwm_pair(device, backend, requests)
+            for result in results:
+                print(f"{result['frequency_hz']} {result['duty_percent']}")
+            return 0
+
         if (
             not args.dry_run
             and args.command in {"info", "stop", "pwm"}
@@ -664,24 +793,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             frame = device.stop(channel=args.channel)
             if args.dry_run:
                 _print_frame("STOP", frame)
-            else:
-                _print_response("STOP", device.last_response)
             return 0
 
         if args.command == "pwm" and args.pwm_command == "start":
             frame = device.pwm_start(args.channel, args.freq, args.duty)
             if args.dry_run:
                 _print_frame("PWM_START", frame)
-            else:
-                _print_response("PWM_START", device.last_response)
             return 0
 
         if args.command == "pwm" and args.pwm_command == "stop":
             frame = device.pwm_stop(args.channel)
             if args.dry_run:
                 _print_frame("PWM_STOP", frame)
-            else:
-                _print_response("PWM_STOP", device.last_response)
             return 0
 
         if args.command == "trigger" and args.trigger_command == "simple":
@@ -693,8 +816,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if args.dry_run:
                 _print_frame("SIMPLE_TRIGGER", frame)
-            else:
-                _print_response("SIMPLE_TRIGGER", device.last_response)
             return 0
 
         if args.command == "trigger" and args.trigger_command == "stage":
@@ -719,8 +840,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if args.dry_run:
                 _print_frame("STAGE_TRIGGER", frame)
-            else:
-                _print_response("STAGE_TRIGGER", device.last_response)
             return 0
 
         if args.command == "trigger" and args.trigger_command == "serial":
@@ -739,8 +858,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             frame = device.configure_serial_trigger(config)
             if args.dry_run:
                 _print_frame("SERIAL_TRIGGER", frame)
-            else:
-                _print_response("SERIAL_TRIGGER", device.last_response)
             return 0
 
         if args.command == "capture" and args.capture_command == "configure":
@@ -757,8 +874,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             frame = device.configure_sampling(params)
             if args.dry_run:
                 _print_frame("PARAMETER_SETTING", frame)
-            else:
-                _print_response("PARAMETER_SETTING", device.last_response)
             return 0
 
         if args.command == "capture" and args.capture_command == "run":
@@ -788,7 +903,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 overwrite=args.force,
                 trigger_timeout_seconds=args.trigger_timeout,
             )
-            print(json.dumps(manifest, sort_keys=True))
             return 0
 
         if args.command == "capture" and args.capture_command == "stream":
@@ -811,7 +925,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 sleep_fn=time.sleep,
                 overwrite=args.force,
             )
-            print(json.dumps(manifest, sort_keys=True))
             return 0
 
         if args.command == "capture" and args.capture_command == "read":

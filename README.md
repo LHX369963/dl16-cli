@@ -26,10 +26,14 @@ initialization handshakes first and uses endpoint clear/reset only after failure
 ## Quick capture
 
 ```bash
+dl16 pwm verify --pwm0 1kHz,25 --pwm1 2kHz,75
 dl16 capture run --buffer --channels 7,15 --sample-rate 250000000 --set-time 1 \
   --trigger rising --trigger-channel 7 --trigger-position 50 --output-dir capture
 dl16 capture measure --input-dir capture --channel 7
 ```
+
+Successful control and file-producing commands are silent. Measurements print
+only requested values unless a detailed format is explicitly selected.
 
 The CLI chooses `--sample-index` by default and protects existing capture files.
 Use a new output directory unless replacement is explicitly requested with

@@ -9,6 +9,9 @@ dl16 capture filter --input-dir capture --output-dir filtered --max-samples 2 --
 dl16 capture search --input-dir capture --conditions 7=rising,15=high --limit 100
 ```
 
+PWM measurement prints only `frequency duty`; add `--json` for complete edge,
+period, sample-rate, and variation metadata.
+
 Export CSV, edge CSV, or VCD without copying the full capture into memory:
 
 ```bash

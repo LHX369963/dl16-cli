@@ -113,5 +113,7 @@ def measure_pwm_capture(capture_dir: str | Path, *, channel: int) -> dict:
             "median_period_samples": median_period,
             "min_period_samples": min(periods),
             "max_period_samples": max(periods),
+            "min_duty_percent": float(min(duties)),
+            "max_duty_percent": float(max(duties)),
         })
     return result

@@ -88,7 +88,7 @@ def test_cli_non_dry_run_stop_uses_backend_factory(monkeypatch, capsys):
     rc = cli.main(["stop", "--channel", "2"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "STOP response: 99" in out
+    assert out == ""
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
 
 
@@ -100,8 +100,63 @@ def test_cli_non_dry_run_pwm_start_uses_backend_factory(monkeypatch, capsys):
     rc = cli.main(["pwm", "start", "--channel", "0", "--freq", "1000", "--duty", "50"])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "PWM_START response: 99" in out
+    assert out == ""
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
+
+
+def test_pwm_verify_parses_units_and_plans_compact_capture():
+    import dl16_cli.cli as cli
+
+    assert cli._parse_pwm_verify_spec("1kHz,25%") == (1000, 25.0)
+    assert cli._parse_pwm_verify_spec("50MHz,120") == (20_000_000, 100.0)
+    assert cli._pwm_verify_plan([(0, 0, 1000, 25), (1, 8, 2000, 75)]) == (
+        1_000_000, 20.0,
+    )
+
+
+def test_cli_pwm_verify_is_one_compact_command(monkeypatch, capsys):
+    import dl16_cli.cli as cli
+
+    captured = []
+    monkeypatch.setattr(cli, "PyUsbBackend", lambda vid_pid=None, timeout_ms=1000: CliFakeBackend())
+    monkeypatch.setattr(
+        cli,
+        "_verify_pwm_pair",
+        lambda device, backend, requests: captured.append(requests) or [
+            {"frequency_hz": 1000.0, "duty_percent": 25.0},
+            {"frequency_hz": 2000.0, "duty_percent": 75.0},
+        ],
+    )
+    assert cli.main(["pwm", "verify", "--pwm0", "1kHz,25", "--pwm1", "2kHz,75"]) == 0
+    assert captured == [[(0, 0, 1000, 25.0), (1, 8, 2000, 75.0)]]
+    assert capsys.readouterr().out == "1000.0 25.0\n2000.0 75.0\n"
+
+
+def test_pwm_verify_warns_without_suppressing_results(monkeypatch, capsys):
+    import dl16_cli.cli as cli
+
+    class Device:
+        def initialize_connection(self):
+            pass
+
+        def pwm_start(self, channel, frequency, duty):
+            pass
+
+        def stop_no_response(self):
+            pass
+
+    monkeypatch.setattr(cli, "capture_to_disk", lambda *args, **kwargs: {})
+    monkeypatch.setattr(cli, "measure_pwm_capture", lambda directory, channel: {
+        "frequency_hz": 900.0,
+        "min_frequency_hz": 850.0,
+        "max_frequency_hz": 950.0,
+        "duty_percent": 30.0,
+        "min_duty_percent": 28.0,
+        "max_duty_percent": 32.0,
+    })
+    result = cli._verify_pwm_pair(Device(), object(), [(0, 0, 1000, 25.0)])
+    assert result[0]["frequency_hz"] == 900.0
+    assert capsys.readouterr().err == "warning: CH0.freq=900 CH0.duty=30\n"
 
 
 def test_cli_raw_parameter_setting_dry_run_prints_frame(capsys):
@@ -164,7 +219,7 @@ def test_cli_capture_configure_non_dry_run_uses_backend(monkeypatch, capsys):
     ])
     out = capsys.readouterr().out
     assert rc == 0
-    assert "PARAMETER_SETTING response: 99" in out
+    assert out == ""
     assert len(CliFakeBackend.instances[0].sent_frames) == 1
 
 
@@ -311,7 +366,7 @@ def test_cli_capture_run_initializes_configures_triggers_reads_and_trims_trailer
     manifest = __import__("json").loads((output / "manifest.json").read_text())
     assert manifest["channels"]["7"]["samples"] == 1000
     assert manifest["transport_trailer_bytes_removed"] == 12
-    assert '"samples": 1000' in capsys.readouterr().out
+    assert capsys.readouterr().out == ""
 
 
 def test_cli_capture_run_buffer_sets_original_buffer_bit(monkeypatch, tmp_path):

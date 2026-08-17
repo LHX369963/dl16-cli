@@ -2,6 +2,7 @@
 
 Use `capture run` for finite Stream/Buffer/RLE. Defaults are 1.2 V threshold and
 0% trigger position; the CLI chooses a valid sample index.
+Successful capture is silent; artifacts are written to `--output-dir`.
 
 ```bash
 # Finite Stream

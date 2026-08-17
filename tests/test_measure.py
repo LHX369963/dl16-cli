@@ -29,6 +29,7 @@ def test_measure_pwm_uses_complete_rising_edge_periods(tmp_path):
     assert result["falling_edges"] == 20
     assert result["median_period_samples"] == 100
     assert result["min_frequency_hz"] == result["max_frequency_hz"] == 10_000
+    assert result["min_duty_percent"] == result["max_duty_percent"] == 25
 
 
 def test_cli_measure_is_offline(tmp_path, monkeypatch, capsys):
@@ -37,4 +38,8 @@ def test_cli_measure_is_offline(tmp_path, monkeypatch, capsys):
     _write_pwm(tmp_path, high=75)
     monkeypatch.setattr(cli, "PyUsbBackend", lambda **kwargs: pytest.fail("USB opened"))
     assert cli.main(["capture", "measure", "--input-dir", str(tmp_path), "--channel", "7"]) == 0
+    assert capsys.readouterr().out == "10000.0 75.0\n"
+    assert cli.main([
+        "capture", "measure", "--input-dir", str(tmp_path), "--channel", "7", "--json",
+    ]) == 0
     assert json.loads(capsys.readouterr().out)["duty_percent"] == 75

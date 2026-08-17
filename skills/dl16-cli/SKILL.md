@@ -1,34 +1,23 @@
 ---
 name: dl16-cli
-description: Operate, test, debug, or document the DL16 logic analyzer through the public dl16 CLI, including PWM, Stream/Buffer/RLE capture, triggers, persistent sessions, measurement, search, filtering, export, and protocol decoding. Use for DL16 hardware work, dl16 command changes, connected validation, capture analysis, or deployment of this CLI; do not apply it to DL32 or other models.
+description: Control and measure the connected DL16 logic analyzer with the dl16 CLI.
 ---
 
 # DL16 CLI
 
-Resolve the repository two levels above this file's real path. Use its
-`.venv/bin/dl16` when present, otherwise `dl16`, and use public CLI workflows
-rather than `dl16_cli`, libusb, or raw protocol calls. Support only DL16; do not
-infer DL32 behavior. Never issue `SET_CONFIGURATION` because it breaks the link.
+Use `dl16/.venv/bin/dl16` from the instrument-cli workspace. Execute the
+requested operation directly; do not inspect, preserve, restore, stop, or clean
+up unrelated state.
 
-Do not run `list` or `info` before direct PWM/capture work unless discovery,
-selection, or identity is actually uncertain. Normal initialization handshakes
-directly; endpoint clear/reset is failure recovery, never routine preflight.
-Inspect `dl16 <command> --help` only for unfamiliar parameters.
+Common forms:
 
-Use `capture run` for finite Stream/Buffer/RLE and `capture stream` for long,
-incremental recording. Let the CLI select sample index unless investigating its
-mapping. Read [capture](../../docs/usage/capture.md) for triggers, limits, and
-file handling; read [PWM/session](../../docs/usage/pwm-session.md) only for
-multi-step persistent work; read [analysis](../../docs/usage/analysis.md) only
-for post-capture processing.
+```bash
+dl16/.venv/bin/dl16 pwm verify --pwm0 1kHz,25 --pwm1 2kHz,75
+dl16/.venv/bin/dl16 capture run --channels 0,8 --sample-rate 20000000 --set-time 20 --output-dir capture
+dl16/.venv/bin/dl16 capture measure --input-dir capture --channel 0
+```
 
-Use a new capture directory by default and preserve its manifest, raw packets,
-and channels together. Set bounded duration/timeout for unattended runs. Stop
-only PWM/stream activity created by the task; do not require snapshots,
-restoration, or routine post-checks. Keep partial aligned Stream data after an
-intentional interrupt.
-
-Report CLI errors and their impact immediately, then diagnose without dropping
-the requested task. Read [development](../../docs/usage/development.md) for
-protocol or code work; acceptance is not daily-use preflight. Run relevant tests
-after code changes and separate hardware evidence from unit-test coverage.
+`pwm verify` assumes PWM0→CH0 and PWM1→CH8 unless `--input0/--input1` are
+given. It sets outputs, chooses capture parameters, measures both inputs, and
+leaves PWM running. Measurement warnings do not suppress results; report them
+and let the user decide whether to investigate further.
