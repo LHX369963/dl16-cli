@@ -127,7 +127,10 @@ def test_cli_pwm_verify_is_one_compact_command(monkeypatch, capsys):
             {"frequency_hz": 2000.0, "duty_percent": 75.0},
         ],
     )
-    assert cli.main(["pwm", "verify", "--pwm0", "1kHz,25", "--pwm1", "2kHz,75"]) == 0
+    assert cli.main([
+        "pwm", "verify", "--pwm0", "1kHz,25", "--input0", "0",
+        "--pwm1", "2kHz,75", "--input1", "8",
+    ]) == 0
     assert captured == [[(0, 0, 1000, 25.0), (1, 8, 2000, 75.0)]]
     assert capsys.readouterr().out == "1000.0 25.0\n2000.0 75.0\n"
 

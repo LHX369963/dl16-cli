@@ -12,7 +12,7 @@ chooses a compact Buffer capture, measures all complete periods, and leaves PWM
 running:
 
 ```bash
-dl16 pwm verify --pwm0 1kHz,25 --pwm1 2kHz,75
+dl16 pwm verify --pwm0 1kHz,25 --input0 0 --pwm1 2kHz,75 --input1 8
 ```
 
 It prints only `frequency duty` per requested PWM. Out-of-range frequency/duty

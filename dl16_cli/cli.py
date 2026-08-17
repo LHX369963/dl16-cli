@@ -472,9 +472,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raise Dl16Error("pwm verify requires connected hardware")
             requests: list[tuple[int, int, int, float]] = []
             if args.pwm0 is not None:
+                if args.input0 is None:
+                    raise Dl16Error("--pwm0 requires --input0")
                 frequency, duty = _parse_pwm_verify_spec(args.pwm0)
                 requests.append((0, args.input0, frequency, duty))
             if args.pwm1 is not None:
+                if args.input1 is None:
+                    raise Dl16Error("--pwm1 requires --input1")
                 frequency, duty = _parse_pwm_verify_spec(args.pwm1)
                 requests.append((1, args.input1, frequency, duty))
             if not requests:

@@ -32,8 +32,8 @@ def build_parser() -> argparse.ArgumentParser:
     pwm_verify = pwm_sub.add_parser("verify", help="set PWM, capture inputs, and measure in one call")
     pwm_verify.add_argument("--pwm0", help="frequency,duty; for example 1kHz,25")
     pwm_verify.add_argument("--pwm1", help="frequency,duty; for example 2kHz,75")
-    pwm_verify.add_argument("--input0", type=int, default=0, help="input wired to PWM0 (default: 0)")
-    pwm_verify.add_argument("--input1", type=int, default=8, help="input wired to PWM1 (default: 8)")
+    pwm_verify.add_argument("--input0", type=int, help="input wired to PWM0")
+    pwm_verify.add_argument("--input1", type=int, help="input wired to PWM1")
 
     capture = sub.add_parser("capture", help="capture configuration and acquisition")
     capture_sub = capture.add_subparsers(dest="capture_command", required=True)
@@ -194,5 +194,4 @@ def build_parser() -> argparse.ArgumentParser:
         raw_cmd.add_argument("--payload-hex", required=True, help="payload bytes as hexadecimal, spaces allowed")
 
     return parser
-
 
