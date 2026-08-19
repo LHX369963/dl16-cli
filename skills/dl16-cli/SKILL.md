@@ -8,6 +8,8 @@ description: Control and measure DL16 logic analyzers with the dl16 CLI.
 Use `dl16/.venv/bin/dl16` from the instrument-cli workspace. Execute the
 requested operation directly; do not inspect, preserve, restore, stop, or clean
 up unrelated state.
+Do not scan processes or query preliminary state. Omit device selectors unless
+the CLI reports ambiguity.
 
 Common forms:
 
